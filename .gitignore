@@ -1,0 +1,51 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.pyd
+
+# === Jupyter Notebooks ===
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# === Environments ===
+.venv/
+venv/
+env/
+ENV/
+*.env
+*.venv
+
+# === Data Files ===
+Sensor_STWIN/
+*.zip
+*.dat
+*.csv
+*.json
+
+# === Logs and Outputs ===
+*.log
+*.out
+*.tmp
+
+# === IDEs ===
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+*.iml
+
+# === OS/System Files ===
+.DS_Store
+Thumbs.db
+
+# === ST SDK Temporary Files ===
+Utilities/
+__MACOSX/
+*~  # backup files
+
