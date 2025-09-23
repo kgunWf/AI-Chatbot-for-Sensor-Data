@@ -44,12 +44,12 @@ Due to size constraints (~4 GB), the dataset is **not stored in this GitHub repo
 
 ### 🔗 Download Link
 
-[Download Sensor_STWIN ZIP (Google Drive)](https://your-drive-link.com)
+[Download Sensor_STWIN ZIP (Google Drive)](https://drive.google.com/file/d/1kTVLvjYt6VXaEUNkX_yk3yqUrmNlWBDV/view?usp=sharing)
 
 After downloading:
 
-1. Unzip the archive into the root directory of the project.
-2. You should now have a folder named `Sensor_STWIN/` next to your code.
+1. Unzip the archive into the data directory of the project.
+2. You should now have a folder named `Sensor_STWIN/` under the data directory.
 
 ---
 
