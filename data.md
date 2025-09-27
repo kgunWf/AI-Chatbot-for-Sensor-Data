@@ -52,7 +52,26 @@ After downloading:
 2. You should now have a folder named `Sensor_STWIN/` under the data directory.
 
 ---
+### 🔗 Download Link (Converted Dataset)
 
+[Download Converted Sensor_STWIN Dataset (Google Drive)](https://drive.google.com/file/d/1B5StbnPc7qC2LkN_QUzkrDD5vxLPIFg1/view?usp=drive_link)
+
+> ⚠️ Note: This archive contains the dataset with **all `.dat` files already converted to `.csv`**.  
+> To save space:
+> - Each CSV file is further compressed as `.csv.gz`.  
+> - The whole dataset is packaged into a `.tar.gz` archive.  
+
+After downloading:
+1. Extract the `.tar.gz` archive (double-click on macOS, or run `tar -xvzf file.tar.gz` in terminal).  
+2. Inside, you’ll find the folder `converted_csv/` containing `.csv.gz` files.  
+3. You can open the compressed CSV files directly in Python using pandas:  
+
+   ```python
+   import pandas as pd
+   df = pd.read_csv("path/to/file.csv.gz")
+   print(df.head())
+   
+---
 ## 🧪 Data Analysis Tools
 
 Use the official [ST Sensor SDK](https://www.st.com/en/embedded-software/fp-sns-datalog1.html) to extract and analyze `.dat` files.
