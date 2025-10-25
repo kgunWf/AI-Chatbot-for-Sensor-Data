@@ -86,7 +86,7 @@ def _infer_meta_from_path(acq_dir: Path) -> Dict[str, str]:
     parts = acq_dir.parts
     condition = _find_token(parts, KNOWN_CONDITIONS) or 'vel-fissa'
     status = _find_status(parts) or 'OK'
-    rpm = _find_rpm(parts) or 'PMI_100rpm'
+    rpm = _find_rpm(parts) or 'NO_RPM_VALUE'
     if condition == 'vel_fissa':
         condition = 'vel-fissa'
     return {'condition': condition, 'belt_status': status, 'rpm': rpm}
@@ -112,12 +112,12 @@ def _normalize_dataframe(obj) -> Optional[pd.DataFrame]:
         parts = [df for df in obj.values() if isinstance(df, pd.DataFrame)]
         if not parts:
             return None
-        return pd.concat(parts, axis=1).sort_index()
+        return pd.concat(parts, axis=1, join='outer').sort_index()
     if isinstance(obj, (list, tuple)):
         parts = [df for df in obj if isinstance(df, pd.DataFrame)]
         if not parts:
             return None
-        return pd.concat(parts, axis=1).sort_index()
+        return pd.concat(parts, axis=1, join='outer').sort_index()
     return None
 
 def _iter_acquisition_dirs(root: Path) -> Iterator[Path]:
