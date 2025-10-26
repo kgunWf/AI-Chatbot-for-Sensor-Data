@@ -8,10 +8,10 @@ from feature_extraction import extract_features_from_bags
 import pandas as pd
 
 
-# def load_hsd_items(root: str):
-#     # root can be your top-level dataset, e.g. "/Users/kgun/Downloads/Sensor_STWIN"
-#     for item in iter_hsd_items(root, only_active=True, verbose=True):
-#         yield item
+def load_hsd_items(root: str):
+    # root can be your top-level dataset, e.g. "/Users/kgun/Downloads/Sensor_STWIN"
+    for item in iter_hsd_items(root, only_active=True, verbose=True):
+        yield item
 
 
 def test_hsd_loader(root: str, limit: int = 10, verbose: bool = True) -> None:
@@ -24,7 +24,7 @@ def test_hsd_loader(root: str, limit: int = 10, verbose: bool = True) -> None:
         rows = len(item["data"]) if hasattr(item.get("data"), "__len__") else -1
         print(
             f"{n:04d} | {item['condition']} | {item['belt_status']} | "
-            f"{item['sensor']} | {item['rpm']} | rows={rows} | odr={item.get('odr')}"
+            f"{item['sensor']} | {item['sensor_type']} | {item['rpm']} | rows={rows} | odr={item.get('odr')}"
         )
         if n >= limit:
             break
@@ -42,7 +42,7 @@ def test_hsd_loader_with_features(root: str, limit: int = 10, verbose: bool = Tr
         rows = len(item["data"]) if hasattr(item.get("data"), "__len__") else -1
         print(
             f"{n:04d} | {item['condition']} | {item['belt_status']} | "
-            f"{item['sensor']} | {item['rpm']} | rows={rows} | odr={item.get('odr')}"
+            f"{item['sensor']} | {item['sensor_type']} | {item['rpm']} | rows={rows} | odr={item.get('odr')}"
         )
         bags.append(item)
         if n >= limit:
@@ -57,9 +57,9 @@ def test_hsd_loader_with_features(root: str, limit: int = 10, verbose: bool = Tr
 
     # quick peek
     if verbose:
-        with pd.option_context("display.max_columns", 12, "display.width", 160):
-            print("\nFeature preview (first 5 rows, first 12 cols):")
-            print(feats_df.iloc[:5, :12])
+        with pd.option_context("display.max_columns", 50, "display.width", 300):
+            print("\nFeature preview (first 5 rows, first 50 cols):")
+            print(feats_df.iloc[:5, :50])
 
     return feats_df
 
