@@ -2,14 +2,44 @@ import numpy as np
 import pandas as pd
 from scipy.stats import skew, kurtosis, entropy
 from scipy.fft import rfft, rfftfreq
+from pandas.api.types import is_numeric_dtype
 
 # Fields to ignore when extracting signals
 TIME_COLS = {"timestamp", "time", "ts", "datetime", "label"}
 
+def _looks_numeric_series(s: pd.Series) -> bool:
+    s2 = (s.astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.extract(r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)")[0])
+    s2 = pd.to_numeric(s2, errors="coerce")
+    return s2.notna().sum() >= 2
+
 def _numeric_signal_columns(df: pd.DataFrame) -> list[str]:
-    """Return numeric sensor columns (excluding time-like or label fields)."""
-    num_cols = [c for c in df.columns if np.issubdtype(df[c].dtypes, np.number)]
-    return [c for c in num_cols if c.lower() not in TIME_COLS]
+    cols = []
+    for c in df.columns:
+        cl = c.lower()
+        if cl in TIME_COLS:
+            continue
+        s = df[c]
+        if is_numeric_dtype(s):
+            if pd.to_numeric(s, errors="coerce").notna().sum() >= 2:
+                cols.append(c)
+        else:
+            if _looks_numeric_series(s):
+                cols.append(c)
+    return cols
+
+def _make_unique_columns(cols):
+    seen = {}
+    out = []
+    for c in cols:
+        if c in seen:
+            seen[c] += 1
+            out.append(f"{c}.{seen[c]}")  # temp, temp.1, temp.2, ...
+        else:
+            seen[c] = 0
+            out.append(c)
+    return out
 
 def extract_features_from_databag(bag: dict) -> dict:
     """
@@ -31,14 +61,27 @@ def extract_features_from_databag(bag: dict) -> dict:
 
     if not isinstance(df, pd.DataFrame) or df.empty:
         return features  # No signal to extract
-
+    # NEW: ensure duplicate labels don’t break dtype logic
+    df = df.copy()
+    df.columns = _make_unique_columns(list(df.columns))
+    #gets a list of column names that are numeric
     channels = _numeric_signal_columns(df)
 
     for axis in channels:
         ###burda bir sey olabilir
-        sig = pd.to_numeric(df[axis], errors="coerce").astype(np.float64).dropna().values
+        raw = df[axis]
+        if is_numeric_dtype(raw):
+            s = pd.to_numeric(raw, errors="coerce")
+        else:
+            s = pd.to_numeric(
+                raw.astype(str)
+                .str.replace(",", ".", regex=False)
+                .str.extract(r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)")[0],
+                errors="coerce"
+            )
+        sig = s.astype("float64").dropna().values
         if sig.size < 2:
-            continue  # Too small — skip
+            continue
 
         # --- Time-domain ---
         # --- Time-domain (always compute if valid size) ---
@@ -97,3 +140,5 @@ def extract_features_from_bags(bags: list[dict]) -> pd.DataFrame:
     """
     rows = [extract_features_from_databag(b) for b in bags]
     return pd.DataFrame(rows)
+
+
