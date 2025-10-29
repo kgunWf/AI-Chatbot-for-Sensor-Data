@@ -3,8 +3,8 @@ import os
 import json
 from typing import Iterable, Dict
 
-from core.stdatalog_loader import iter_hsd_items
-from core.feature_extraction import extract_features_from_bags
+from stdatalog_loader import iter_hsd_items
+from feature_extraction import extract_features_from_bags
 import pandas as pd
 
 
