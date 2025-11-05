@@ -7,35 +7,6 @@ import re
 import re
 
 
-def normalize_sensor_columns(df: pd.DataFrame, sensor: str) -> pd.DataFrame:
-    """
-    Standardize column names like 'A_x [g]', 'TEMP [C]' to 'x', 'temp', etc.
-    Keeps multiple axes if present.
-    """
-    new_cols = {}
-    for col in df.columns:
-        col_lower = col.strip().lower()
-
-        # Map common types
-        if "x" in col_lower and "mag" in col_lower or "x" in col_lower and "acc" in col_lower or "x" == col_lower:
-            new_cols[col] = "x"
-        elif "y" in col_lower and "mag" in col_lower or "y" in col_lower and "acc" in col_lower or "y" == col_lower:
-            new_cols[col] = "y"
-        elif "z" in col_lower and "mag" in col_lower or "z" in col_lower and "acc" in col_lower or "z" == col_lower:
-            new_cols[col] = "z"
-        elif "temp" in col_lower:
-            new_cols[col] = "temp"
-        elif "hum" in col_lower:
-            new_cols[col] = "hum"
-        elif "press" in col_lower or "prs" in col_lower:
-            new_cols[col] = "prs"
-        elif "mic" in col_lower or "aud" in col_lower:
-            new_cols[col] = "mic"
-        else:
-            new_cols[col] = col_lower  # fallback
-
-    return df.rename(columns=new_cols)
-
 
 # normalize names like "IIS3DWB_ACC" → "iis3dwb_acc"
 def norm(s: str) -> str:
@@ -48,9 +19,54 @@ SUB = {
     "magnetometer":"mag","mag":"mag",
     "temperature":"temp","temp":"temp",
     "humidity":"hum","hum":"hum",
-    "pressure":"press","press":"press",
+    "pressure":"prs","press":"prs",
     "microphone":"mic","audio":"mic","mic":"mic",
 }
+def normalize_sensor_columns(df: pd.DataFrame, sensor: str) -> pd.DataFrame:
+    """
+    Standardize column names like 'MIC [Waveform]' to 'mic', etc.,
+    and ensure no duplicate column names exist.
+    """
+    df = df.copy()
+    sensor_type = get_sensor_type(sensor)
+    # Step 1: Normalize names
+    new_cols = {}
+    for col in df.columns:
+        col_lower = col.strip().lower()
+        if sensor_type in {"acc", "gyro", "mag"} and "x" in col_lower:
+            new_cols[col] = "x"
+        elif sensor_type in {"acc", "gyro", "mag"} and "y" in col_lower:
+            new_cols[col] = "y"
+        elif sensor_type in {"acc", "gyro", "mag"} and "z" in col_lower:
+            new_cols[col] = "z"
+        elif "temp" in col_lower:
+            new_cols[col] = "temp"
+        elif "hum" in col_lower:
+            new_cols[col] = "hum"
+        elif "press" in col_lower or "prs" in col_lower:
+            new_cols[col] = "prs"
+        elif "mic" in col_lower or "audio" in col_lower or "waveform" in col_lower:
+            new_cols[col] = "mic"
+        else:
+            new_cols[col] = col_lower
+
+    df.rename(columns=new_cols, inplace=True)
+
+    # Step 2: Deduplicate column names (mic, mic_1, mic_2, etc.)
+    seen = {}
+    new_renamed = []
+    for col in df.columns:
+        if col not in seen:
+            seen[col] = 1
+            new_renamed.append(col)
+        else:
+            seen[col] += 1
+            new_renamed.append(f"{col}_{seen[col]-1}")
+    df.columns = new_renamed
+
+    return df
+
+
 
 def get_sensor_type(sensor_name: str) -> str:
     """
@@ -66,23 +82,41 @@ def get_sensor_type(sensor_name: str) -> str:
     return "unknown"
 
 def get_odr_map(acq_dir: str | Path) -> dict[str, float]:
-    """Return {'iis3dwb_acc': 26667.0, 'hts221_temp': 12.5, ...} from STWIN_*/DeviceConfig.json."""
+    """
+    Return {'lps22hh_temp': 199.2, 'lps22hh_press': 199.2, ...}
+    by directly matching sub-sensor names as used by stdatalog_loader.
+    """
     cfg = Path(acq_dir) / "DeviceConfig.json"
     if not cfg.exists():
+        print(f"❌ Missing DeviceConfig.json at {cfg}")
         return {}
-    j = json.loads(cfg.read_text(encoding="utf-8"))
+
+    try:
+        j = json.loads(cfg.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"❌ Failed to parse JSON: {e}")
+        return {}
+
     sensors = (j.get("device") or {}).get("sensor") or []
     out = {}
+
     for s in sensors:
-        name = norm(s.get("name",""))
-        desc = (s.get("sensorDescriptor") or {}).get("subSensorDescriptor") or []
-        stat = (s.get("sensorStatus")     or {}).get("subSensorStatus")     or []
-        for d, st in zip(desc, stat):
-            subtype = SUB.get(norm(d.get("sensorType","")), None)
-            key = f"{name}_{subtype}" if subtype else name
-            # prefer measured ODR, else configured ODR; keep it simple
+        sensor_name = norm(s.get("name", ""))  # e.g., 'lps22hh'
+        descriptors = (s.get("sensorDescriptor") or {}).get("subSensorDescriptor") or []
+        statuses = (s.get("sensorStatus") or {}).get("subSensorStatus") or []
+
+        for d, st in zip(descriptors, statuses):
+            if not st.get("isActive", True):
+                continue
+
+            sub_key = d.get("sensorType", "").strip().lower()  # e.g. 'press', 'temp'
+            full_key = norm(f"{sensor_name}_{sub_key}")        # matches stdatalog_loader key: lps22hh_press
+
             odr = st.get("ODRMeasured") or st.get("ODR")
             if odr is not None:
-                try: out[key] = float(odr)
-                except: pass
+                try:
+                    out[full_key] = float(odr)
+                except Exception as e:
+                    print(f"⚠️ Could not assign ODR for {full_key}: {e}")
+
     return out

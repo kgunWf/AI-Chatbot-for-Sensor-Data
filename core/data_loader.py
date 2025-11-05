@@ -48,8 +48,10 @@ def test_hsd_loader_with_features(root: str, limit: int = 10, verbose: bool = Tr
         if n >= limit:
             break
 
-    # compute features
+
     feats_df = extract_features_from_bags(bags)
+
+
     # put a few identifying cols first
     id_cols = ["condition", "belt_status", "sensor", "rpm"]
     other_cols = [c for c in feats_df.columns if c not in id_cols]
@@ -62,6 +64,35 @@ def test_hsd_loader_with_features(root: str, limit: int = 10, verbose: bool = Tr
             print(feats_df.iloc[:5, :50])
 
     return feats_df
+
+
+#Important: you can test features for a specific sensor type only, e.g., 'acc', 'temp', 'hum', 'mic'
+#I used this during development to focus on one sensor at a time
+def test_features_by_sensor_type(root: str, sensor_type: str, limit: int = 10) -> None:
+    """
+    Test and print features only for a specific sensor type (e.g., 'acc', 'temp', 'hum', 'mic').
+    """
+    from feature_extraction import extract_features_from_bag  # or your new file if renamed
+
+    count = 0
+    for item in iter_hsd_items(root, only_active=True, verbose=False):
+        if item["sensor_type"] != sensor_type:
+            continue
+
+        print(f"\n🔍 [{count+1}] Sensor: {item['sensor']} | Type: {sensor_type} | Rows: {len(item['data'])}")
+        features = extract_features_from_bag(item)
+        df = pd.DataFrame([features])
+
+        # Visualize first few features
+        with pd.option_context("display.max_columns", None, "display.width", 160):
+            print(df.T.head(20))  # Transpose to view vertically
+
+        count += 1
+        if count >= limit:
+            break
+
+    print(f"\n✅ Done. Displayed {count} {sensor_type} sensor features.")
+
 
 
 if __name__ == "__main__":
