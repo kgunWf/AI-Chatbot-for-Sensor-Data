@@ -26,7 +26,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Iterable
-from utils import get_odr_map, norm
+from utils import get_odr_map, norm, get_sensor_type, normalize_sensor_columns
 import pandas as pd
 
 # --- Optional: make local SDK repo importable if it's inside the project tree ---
@@ -86,10 +86,10 @@ def _infer_meta_from_path(acq_dir: Path) -> Dict[str, str]:
     parts = acq_dir.parts
     condition = _find_token(parts, KNOWN_CONDITIONS) or 'vel-fissa'
     status = _find_status(parts) or 'OK'
-    rpm = _find_rpm(parts) or 'PMI_100rpm'
+    rpm = _find_rpm(parts) or 'NO_RPM_VALUE'
     if condition == 'vel_fissa':
         condition = 'vel-fissa'
-    return {'condition': condition, 'belt_status': status, 'rpm': rpm}
+    return {'condition': condition, 'belt_status': status, 'rpm': rpm, 'full_path': acq_dir}
 # -------------------------------------------------------------------------------
 
 def _is_hsd_folder(dir_path: Path) -> bool:
@@ -106,19 +106,38 @@ def _normalize_dataframe(obj) -> Optional[pd.DataFrame]:
     """Accept DataFrame or dict/list of DataFrames and return a single DataFrame."""
     if obj is None:
         return None
+
+    # If it's already a DataFrame
     if isinstance(obj, pd.DataFrame):
         return obj
+
+    # If it's a dict: try to extract and combine all DataFrames
     if isinstance(obj, dict):
-        parts = [df for df in obj.values() if isinstance(df, pd.DataFrame)]
+        parts = []
+        for key, val in obj.items():
+            if isinstance(val, pd.DataFrame):
+                parts.append(val)
+            elif hasattr(val, "__array__"):  # e.g. numpy array
+                parts.append(pd.DataFrame(val, columns=[key]))
         if not parts:
             return None
-        return pd.concat(parts, axis=1).sort_index()
+        return pd.concat(parts, axis=1, join="outer").sort_index()
+
+    # If it's a list or tuple
     if isinstance(obj, (list, tuple)):
-        parts = [df for df in obj if isinstance(df, pd.DataFrame)]
+        parts = []
+        for val in obj:
+            if isinstance(val, pd.DataFrame):
+                parts.append(val)
+            elif hasattr(val, "__array__"):
+                parts.append(pd.DataFrame(val))
         if not parts:
             return None
-        return pd.concat(parts, axis=1).sort_index()
+        return pd.concat(parts, axis=1, join="outer").sort_index()
+
+    # fallback
     return None
+
 
 def _iter_acquisition_dirs(root: Path) -> Iterator[Path]:
     # Consider leaf directories named STWIN_* or any dir that passes _is_hsd_folder
@@ -144,6 +163,7 @@ def iter_hsd_items(root: str | Path, only_active: bool=True, verbose: bool=False
                 if verbose:
                     print(f"⚠️  Invalid HSD folder {acq_dir}: {e}")
                 continue
+
             hsd_instance = hsd.create_hsd(acquisition_folder=str(acq_dir))
 
             # Build ODR map once per folder
@@ -161,22 +181,32 @@ def iter_hsd_items(root: str | Path, only_active: bool=True, verbose: bool=False
                 if df is None:
                     continue
 
+                # 🧼 Column cleanup pipeline
+                df = normalize_sensor_columns(df, sensor_name)
+
                 norm_sensor = norm(str(sensor_name))
                 odr = odr_map.get(norm_sensor)
+                if not isinstance(df, pd.DataFrame):
+                    raise TypeError(f"💥 Expected DataFrame, got {type(df)} in {sensor_name}")
+
 
                 yield {
                     'condition': meta['condition'],
                     'belt_status': meta['belt_status'],
                     'sensor': str(sensor_name),
+                    'sensor_type': get_sensor_type(str(sensor_name)),
                     'rpm': meta['rpm'],
                     'data': df,
-                    'odr': odr,  # ✅ added ODR field
+                    'path': meta['full_path'],
+                    'odr': odr,
                 }
 
         except Exception as e:
             if verbose:
                 print(f"⚠️  Skipping acquisition {acq_dir}: {e}")
             continue
+
+
 
 
 __all__ = ['iter_hsd_items']
