@@ -17,14 +17,29 @@ def _to_float(val):
         return np.nan
 
 def extract_vector_stats(signal: np.ndarray, prefix: str) -> dict:
-    """Compute mean/std/rms/etc. over a 3D signal vector."""
-    stats = {
-        f"{prefix}_mean": np.mean(signal, axis=0).tolist(),
-        f"{prefix}_std": np.std(signal, axis=0).tolist(),
-        f"{prefix}_rms": np.sqrt(np.mean(signal**2, axis=0)).tolist(),
-        f"{prefix}_ptp": np.ptp(signal, axis=0).tolist(),
-    }
-    return stats
+    """Compute mean/std/rms/etc. over a 3D signal vector, flattening per-axis stats."""
+    axes = ["x", "y", "z"]
+    out = {}
+
+    # Defensive: handle cases where signal doesn't have exactly 3 columns
+    if signal.ndim != 2 or signal.shape[1] not in (2, 3):
+        raise ValueError(f"Unexpected vector shape for {prefix}: {signal.shape}")
+
+    # Compute stats
+    mean_vals = np.mean(signal, axis=0)
+    std_vals = np.std(signal, axis=0)
+    rms_vals = np.sqrt(np.mean(signal**2, axis=0))
+    ptp_vals = np.ptp(signal, axis=0)
+
+    # Flatten each dimension explicitly
+    for i, axis in enumerate(axes[: signal.shape[1]]):
+        out[f"{prefix}_mean_{axis}"] = float(mean_vals[i])
+        out[f"{prefix}_std_{axis}"] = float(std_vals[i])
+        out[f"{prefix}_rms_{axis}"] = float(rms_vals[i])
+        out[f"{prefix}_ptp_{axis}"] = float(ptp_vals[i])
+
+    return out
+
 
 def extract_scalar_stats(signal: np.ndarray, prefix: str) -> dict:
     """Compute time-domain features for 1D scalar signals."""
@@ -70,25 +85,23 @@ def extract_features_from_bag(bag: dict) -> dict:
     # === VECTOR SIGNALS: ACC, GYRO, MAG ===
     # === VECTOR SIGNALS: ACC, GYRO, MAG ===
     if sensor_type in {"acc", "gyro", "mag"}:
-        if not all(c in df.columns for c in ("x", "y", "z")):
-            print(f"⚠️ Missing one or more of x, y, z in {bag['sensor']}")
-            return out  # skip if incomplete
+        try:
+            sig = df[["x", "y", "z"]].dropna().to_numpy()
+            if sig.shape[0] < 50:
+                print(f"⚠️ Too few samples in {bag['sensor']}")
+                return out
 
-        sig = df[["x", "y", "z"]].dropna().to_numpy()
-        if sig.shape[0] < 3:
-            print(f"⚠️ Too few samples in {bag['sensor']}")
+            prefix = sensor_type
+            out.update(extract_vector_stats(sig, prefix))
+
+            if odr and odr > 100:
+                fft_vals = np.abs(rfft(sig - sig.mean(axis=0), axis=0))
+                freqs = rfftfreq(sig.shape[0], d=1.0 / odr)
+                for i, axis in enumerate(["x", "y", "z"][:sig.shape[1]]):
+                    out[f"{prefix}_dom_freq_{axis}"] = float(freqs[np.argmax(fft_vals[:, i])])
+        except KeyError as e:
+            print(f"⚠️ Missing expected axis in {bag['sensor']}: {e}")
             return out
-
-        # Use sensor_type (acc, gyro, mag) as prefix
-        prefix = sensor_type
-        out.update(extract_vector_stats(sig, prefix))
-
-        # Optional FFT if ODR is sufficient
-        if odr and odr > 100:
-            fft_vals = np.abs(rfft(sig - sig.mean(axis=0), axis=0))
-            freqs = rfftfreq(sig.shape[0], d=1.0 / odr)
-            dom_freqs = freqs[np.argmax(fft_vals, axis=0)]
-            out[f"{prefix}_dom_freq"] = dom_freqs.tolist()
 
 
     # === AUDIO (mic) ===
