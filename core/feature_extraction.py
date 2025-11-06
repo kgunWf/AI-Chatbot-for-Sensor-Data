@@ -68,7 +68,6 @@ def extract_scalar_stats(signal: np.ndarray, prefix: str) -> dict:
         f"{prefix}_kurt": kurt_val,
     }
 
-
 def extract_features_from_bag(bag: dict) -> dict:
     sensor_type = bag["sensor_type"]
     df = bag["data"]
@@ -82,9 +81,10 @@ def extract_features_from_bag(bag: dict) -> dict:
         "rpm": bag["rpm"],
     }
 
-    # === VECTOR SIGNALS: ACC, GYRO, MAG ===
-    # === VECTOR SIGNALS: ACC, GYRO, MAG ===
+    # === VECTOR SIGNALS ===
     if sensor_type in {"acc", "gyro", "mag"}:
+        print(f"🪲 [scalar] Processing {sensor_type} from {bag['sensor']}")
+        print(f"🪲 DataFrame columns: {list(df.columns)}")
         try:
             sig = df[["x", "y", "z"]].dropna().to_numpy()
             if sig.shape[0] < 50:
@@ -103,53 +103,44 @@ def extract_features_from_bag(bag: dict) -> dict:
             print(f"⚠️ Missing expected axis in {bag['sensor']}: {e}")
             return out
 
-
     # === AUDIO (mic) ===
     elif sensor_type == "mic":
-        # Detect all mic-like columns
+        #debugging info
+        print(f"🪲 [scalar] Processing {sensor_type} from {bag['sensor']}")
+        print(f"🪲 DataFrame columns: {list(df.columns)}")
+        
         mic_cols = [c for c in df.columns if "mic" in c.lower() or "waveform" in c.lower() or "audio" in c.lower()]
-        mic_cols = list(dict.fromkeys(mic_cols))  # Remove duplicates if any
+        mic_cols = list(dict.fromkeys(mic_cols))
+        print(f"🪲 [mic] Found mic-like columns: {mic_cols} in {bag['sensor']}")
 
         if not mic_cols:
             print(f"⚠️ No mic column found in {bag['sensor']}")
             return out
 
-        # If there are multiple candidates, choose the one with highest standard deviation (i.e., most dynamic)
         if len(mic_cols) > 1:
-            print(f"⚠️ Multiple mic-like columns found in {bag['sensor']}: {mic_cols}")
             try:
                 stats = {col: df[col].std(skipna=True) for col in mic_cols}
                 mic_col = max(stats, key=stats.get)
                 print(f"✅ Using mic column with highest std: {mic_col}")
             except Exception as e:
                 print(f"⚠️ Failed to pick mic column by std: {e}")
-                mic_col = mic_cols[0]  # fallback
+                mic_col = mic_cols[0]
         else:
             mic_col = mic_cols[0]
 
-
         mic_series = df[mic_col].dropna()
-
-
         if mic_series.empty:
+            print(f"⚠️ mic_series empty in {bag['sensor']}")
             return out
-        #debug
-        #mic_col_data = df[mic_col]
-        # print(f"🧪 First few mic values from {bag['sensor']}:")
-        # print(mic_col_data.head(5))
-        # print("🔬 Column dtypes:\n", mic_col_data.dtypes)
 
-        # If entries are array-like (lists, arrays), flatten them to a long 1D signal
         first_val = mic_series.iloc[0]
         if isinstance(first_val, (list, tuple, np.ndarray)):
             try:
-                # Flatten all values into one long array
                 sig = np.concatenate([np.asarray(x).ravel() for x in mic_series])
             except Exception as e:
                 print(f"⚠️ mic flattening error: {e}")
                 return out
         else:
-            # Handle regular scalar series
             try:
                 sig = pd.to_numeric(mic_series, errors="coerce").dropna().to_numpy()
             except Exception as e:
@@ -157,39 +148,50 @@ def extract_features_from_bag(bag: dict) -> dict:
                 return out
 
         if sig.size < 100:
+            print(f"⚠️ mic signal too short ({sig.size}) in {bag['sensor']}")
             return out
 
         out.update(extract_scalar_stats(sig, "mic"))
 
-        # Optional frequency domain features
         if odr and odr > 1000:
             fft_input = sig - np.mean(sig)
             fft_input *= np.hanning(len(fft_input))
             fft_vals = np.abs(rfft(fft_input))
             freqs = rfftfreq(len(fft_input), d=1.0 / odr)
-
             out["mic_dom_freq"] = _to_float(freqs[np.argmax(fft_vals)])
             psd = fft_vals ** 2
             p = psd / (np.sum(psd) + 1e-12)
             out["mic_freq_entropy"] = _to_float(entropy(p, base=2))
 
-
-
-
     # === SCALAR SIGNALS: TEMP, HUM, PRS ===
     elif sensor_type in {"temp", "hum", "prs"}:
-        expected = {"temp": ["temp"], "hum": ["hum"], "prs": ["prs"]}.get(sensor_type, [])  
+        #debugging info
+        print(f"🪲 [scalar] Processing {sensor_type} from {bag['sensor']}")
+        print(f"🪲 DataFrame columns: {list(df.columns)}")
+        expected = {"temp": ["temp"], "hum": ["hum"], "prs": ["prs"]}.get(sensor_type, [])
+        print(f"🪲 Expected columns for {sensor_type}: {expected}")
+
+        found_cols = []
         for col in df.columns:
             if col in expected:
+                found_cols.append(col)
                 sig = df[col].dropna().to_numpy()
-
+                print(f"🪲 Found valid column '{col}' with {sig.size} samples")
                 if sig.size < 2:
+                    print(f"⚠️ Not enough samples in {col}")
                     continue
                 out.update(extract_scalar_stats(sig, col))
 
+        if not found_cols:
+            print(f"⚠️ No expected column found for {sensor_type} in {bag['sensor']}")
+
+    else:
+        print(f"⚠️ Unknown sensor_type: {sensor_type} for {bag['sensor']}")
+
     return out
 
-def extract_features_from_bags(bags: list[dict]) -> pd.DataFrame:
+
+def extract_features_from_bags(bags: list[dict]) -> list[dict]:
     rows = []
     for bag in bags:
         try:
@@ -197,4 +199,6 @@ def extract_features_from_bags(bags: list[dict]) -> pd.DataFrame:
             rows.append(features)
         except Exception as e:
             print(f"⚠️ Error processing {bag.get('sensor')}: {e}")
-    return pd.DataFrame(rows)
+    return rows
+
+
