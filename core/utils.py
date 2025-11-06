@@ -96,7 +96,6 @@ def normalize_sensor_columns(df: pd.DataFrame, sensor: str) -> pd.DataFrame:
 
 
 
-
 def get_sensor_type(sensor_name: str) -> str:
     """
     Infers the sensor type (acc, gyro, mic, etc.) from a full sensor or sensor+subtype name.
