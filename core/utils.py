@@ -25,11 +25,16 @@ SUB = {
 def normalize_sensor_columns(df: pd.DataFrame, sensor: str) -> pd.DataFrame:
     """
     Standardize column names like 'MIC [Waveform]' to 'mic', etc.,
-    and ensure no duplicate column names exist.
+    and remove duplicate columns (e.g., prs/prs_1, time/time_1)
+    by merging their values.
     """
+    import re
+    import pandas as pd
+
     df = df.copy()
     sensor_type = get_sensor_type(sensor)
-    # Step 1: Normalize names
+
+    # --- Step 1: Normalize column names ---
     new_cols = {}
     for col in df.columns:
         col_lower = col.strip().lower()
@@ -45,26 +50,50 @@ def normalize_sensor_columns(df: pd.DataFrame, sensor: str) -> pd.DataFrame:
             new_cols[col] = "hum"
         elif "press" in col_lower or "prs" in col_lower:
             new_cols[col] = "prs"
-        elif "mic" in col_lower or "audio" in col_lower or "waveform" in col_lower:
+        elif any(k in col_lower for k in ["mic", "audio", "waveform"]):
             new_cols[col] = "mic"
+        elif "time" in col_lower:
+            new_cols[col] = "time"
         else:
             new_cols[col] = col_lower
-
     df.rename(columns=new_cols, inplace=True)
 
-    # Step 2: Deduplicate column names (mic, mic_1, mic_2, etc.)
-    seen = {}
-    new_renamed = []
+   # --- Step 2: Merge duplicates safely ---
+    merged = {}
     for col in df.columns:
-        if col not in seen:
-            seen[col] = 1
-            new_renamed.append(col)
+        base = re.sub(r'_\d+$', '', col)
+        col_data = df[col]
+
+        # if accidentally multi-column, reduce to first column
+        if isinstance(col_data, pd.DataFrame):
+            if len(col_data.columns) == 1:
+                col_data = col_data.iloc[:, 0]
+            else:
+                col_data = col_data.mean(axis=1, numeric_only=True)  # fallback
+
+        if base not in merged:
+            merged[base] = col_data
         else:
-            seen[col] += 1
-            new_renamed.append(f"{col}_{seen[col]-1}")
-    df.columns = new_renamed
+            left = merged[base]
+            if isinstance(left, pd.DataFrame):
+                # same safety fallback
+                if len(left.columns) == 1:
+                    left = left.iloc[:, 0]
+                else:
+                    left = left.mean(axis=1, numeric_only=True)
+            merged[base] = left.combine_first(col_data)
+
+    # --- Step 3: Build final dataframe ---
+    df = pd.DataFrame(merged)
+
+    # --- Step 4: Optional reorder: time first if present ---
+    cols = df.columns.tolist()
+    if "time" in cols:
+        cols = ["time"] + [c for c in cols if c != "time"]
+        df = df[cols]
 
     return df
+
 
 
 
