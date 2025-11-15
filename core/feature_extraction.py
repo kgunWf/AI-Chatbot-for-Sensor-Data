@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import skew, kurtosis, entropy
+from sklearn.impute import SimpleImputer
 
 def _to_float(val):
     """Safely convert numpy or array values to Python float."""
@@ -202,3 +203,33 @@ def extract_features_from_bags(bags: list[dict]) -> list[dict]:
     return rows
 
 
+def prepare_combined_feature_dataframe(bags: list[dict]) -> pd.DataFrame:
+    """
+    Convert list of feature dicts → single combined DataFrame.
+    Missing features are imputed using per-column median.
+    """
+    df = pd.DataFrame(bags)
+
+    # Normalize KO labels
+    df["belt_status"] = df["belt_status"].apply(
+        lambda x: "KO" if str(x).upper().startswith("KO") else "OK"
+    )
+
+    # Keep metadata but treat all others as features
+    meta_cols = ["condition", "belt_status", "sensor", "sensor_type", "rpm"]
+    feature_cols = [c for c in df.columns if c not in meta_cols]
+
+    # Convert all features to numeric (non-numeric → NaN)
+    X = df[feature_cols].apply(pd.to_numeric, errors="coerce")
+
+    # Replace infs
+    X = X.replace([np.inf, -np.inf], np.nan)
+
+    # Impute missing using median
+    imputer = SimpleImputer(strategy="median")
+    X_imputed = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
+
+    # Reassemble full dataframe
+    df_cleaned = pd.concat([df[meta_cols], X_imputed], axis=1)
+
+    return df_cleaned
