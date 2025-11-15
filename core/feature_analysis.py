@@ -9,124 +9,129 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from feature_extraction import prepare_combined_feature_dataframe
+from catboost import CatBoostClassifier
+from xgboost import XGBClassifier
 
+def analyze_global_features(df: pd.DataFrame, top_k=None, do_plots=True):
+    """
+    Global cross-sensor feature analysis.
+    
+    Modes:
+    - Manual mode: user provides top_k (int) -> return that number of top features.
+    - Auto mode: top_k=None -> automatically search the best k using validation accuracy.
+    """
 
-def analyze_features_from_bags(bags: list[dict], top_k=10, do_plots=True):
-    # Group raw dicts by sensor_type
-    grouped = defaultdict(list)
-    for row in bags:
-        if 'sensor_type' in row:
-            grouped[row['sensor_type']].append(row)
+    # -----------------------------
+    # 1) Build cleaned + imputed DF
+    # -----------------------------
 
-    results = {}
+    meta_cols_requested = ["condition", "belt_status", "sensor", "sensor_type", "rpm"]
+    meta_cols = [c for c in meta_cols_requested if c in df.columns]
+    feature_cols = [c for c in df.columns if c not in meta_cols]
 
-    for sensor_type, entries in grouped.items():
-        print(f"\n🔍 Analyzing sensor_type: {sensor_type} ({len(entries)} samples)")
+    X = df[feature_cols]
+    y = df["belt_status"]
 
-        # Merge KO labels to binary
-        for e in entries:
-            e["belt_status"] = "KO" if str(e.get("belt_status", "")).upper().startswith("KO") else "OK"
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
 
-        # Build DataFrame (only includes relevant features for this sensor_type)
-        df = pd.DataFrame(entries)
+    # -----------------------------
+    # 2) Compute global importances
+    # -----------------------------
+    selector = SelectKBest(score_func=f_classif, k="all")
+    selector.fit(X, y_encoded)
+    anova_scores = pd.Series(selector.scores_, index=X.columns).sort_values(ascending=False)
 
-        # Separate features and metadata
-        meta_cols = ["condition", "belt_status", "sensor", "sensor_type", "rpm", "path"]
-        feature_cols = [col for col in df.columns if col not in meta_cols]
+    rfc = RandomForestClassifier(n_estimators=200, random_state=42)
+    rfc.fit(X, y_encoded)
+    rf_importances = pd.Series(rfc.feature_importances_, index=X.columns).sort_values(ascending=False)
 
-        if not feature_cols:
-            print(f"⚠️ No features found for sensor type {sensor_type}. Available columns: {df.columns.tolist()}")
-            continue
+    # -----------------------------
+    # 3) Determine feature counts
+    # -----------------------------
+    all_k_values = [5, 10, 15, 20, 30, 40, len(feature_cols)]
 
-        X_raw = df[feature_cols]
-        y = df["belt_status"]
+    # If user provided a top_k -> manual mode
+    manual_mode = top_k is not None
 
-        if len(y.unique()) < 2:
-            print("⚠️ Skipping - only one class present")
-            continue
+    if manual_mode:
+        # Ensure top_k is <= total number of features
+        top_k = min(top_k, len(rf_importances))
+        best_k = top_k
+    else:
+        # Auto mode: search for best k
+        accuracy_curve = {}
 
-        # Verify we have actual data to process
-        if X_raw.empty or X_raw.isnull().all().all():
-            print(f"⚠️ No valid feature data for sensor type {sensor_type}")
-            continue
+        for k in all_k_values:
+            k = min(k, len(rf_importances))
+            selected = rf_importances.head(k).index.tolist()
 
-        # Encode labels
-        le = LabelEncoder()
-        y_encoded = le.fit_transform(y)
+            Xk = X[selected]
+            X_train, X_test, y_train, y_test = train_test_split(
+                Xk, y_encoded, test_size=0.30, random_state=42, stratify=y_encoded
+            )
+            #model = XGBClassifier(
+            #     n_estimators=400,
+            #     learning_rate=0.05,
+            #     max_depth=5,
+            #     subsample=0.9,
+            #     colsample_bytree=0.7,
+            #     eval_metric="logloss",
+            #     random_state=42
+            # )
 
-        # Defensive numeric conversion + cleaning before imputation
-        # Coerce to numeric (turn strings -> NaN), replace infs with NaN, clip extreme values
-        X_num = X_raw.copy()
-        # attempt to convert all columns to numeric where possible
-        X_num = X_num.apply(lambda s: pd.to_numeric(s, errors="coerce"))
-        # count problematic values
-        n_infs = int(np.isinf(X_num.values).sum())
-        n_nonfinite = int(~np.isfinite(X_num.values).sum())
-        if n_infs or n_nonfinite:
-            print(f"⚠️ Found non-finite values in features for {sensor_type}: infs={n_infs}, non-finite={n_nonfinite}")
-        # replace +/-inf with NaN
-        X_num.replace([np.inf, -np.inf], np.nan, inplace=True)
-        # optionally cap extreme magnitudes to avoid overflow in downstream (use safe threshold)
-        VERY_LARGE = 1e200
-        mask_large = X_num.abs() > VERY_LARGE
-        if mask_large.values.any():
-            print(f"⚠️ Found values exceeding {VERY_LARGE} in {sensor_type}; setting them to NaN to avoid dtype overflow")
-            X_num = X_num.mask(mask_large)
+            #model = CatBoostClassifier(iterations=500, learning_rate=0.05, depth=6, verbose=0)
+            model = RandomForestClassifier(n_estimators=300, random_state=42)
+            model.fit(X_train, y_train)
+            acc = accuracy_score(y_test, model.predict(X_test))
+            accuracy_curve[k] = acc
 
-        # drop columns that are entirely NaN after coercion
-        cols_before = X_num.shape[1]
-        X_num.dropna(axis=1, how="all", inplace=True)
-        cols_after = X_num.shape[1]
-        if cols_after < cols_before:
-            print(f"ℹ️ Dropped {cols_before-cols_after} all-NaN feature columns for {sensor_type}")
+        # Best k = the one giving maximum accuracy
+        best_k = max(accuracy_curve, key=accuracy_curve.get)
 
-        if X_num.empty or X_num.isnull().all().all():
-            print(f"⚠️ No numeric feature data left for sensor type {sensor_type} after cleaning")
-            continue
+    # Now select features using best_k (manual OR auto)
+    selected_features = rf_importances.head(best_k).index.tolist()
 
-        # Impute missing values (should be few or none now)
-        X = pd.DataFrame(SimpleImputer(strategy="mean").fit_transform(X_num), columns=X_num.columns)
+    # -----------------------------
+    # 4) Plot if needed
+    # -----------------------------
+    if do_plots:
+        plt.figure(figsize=(10, 6))
+        sns.barplot(x=rf_importances.head(best_k), y=rf_importances.head(best_k).index)
+        plt.title(f"Top {best_k} Global Features (Random Forest)")
+        plt.xlabel("Importance")
+        plt.tight_layout()
+        plt.show()
 
-        # Feature importance
-        k_best = SelectKBest(score_func=f_classif, k="all")
-        k_best.fit(X, y_encoded)
-        k_scores = pd.Series(k_best.scores_, index=X.columns).sort_values(ascending=False)
-
-        rfc = RandomForestClassifier(n_estimators=100, random_state=42)
-        rfc.fit(X, y_encoded)
-        y_pred = rfc.predict(X)
-        acc = accuracy_score(y_encoded, y_pred)
-        rf_importances = pd.Series(rfc.feature_importances_, index=X.columns).sort_values(ascending=False)
-
-        if do_plots:
-            plt.figure(figsize=(10, 5))
-            sns.barplot(x=rf_importances.head(top_k), y=rf_importances.head(top_k).index)
-            plt.title(f"Top {top_k} Features - {sensor_type} (RF Importance)")
-            plt.xlabel("Importance")
+        if not manual_mode:  # Only plot accuracy curve in AUTO mode
+            ks = list(accuracy_curve.keys())
+            accs = list(accuracy_curve.values())
+            plt.figure(figsize=(8, 5))
+            plt.plot(ks, accs, marker="o")
+            plt.title("Model Accuracy vs Number of Top Features")
+            plt.xlabel("Number of Features")
+            plt.ylabel("Test Accuracy")
+            plt.grid(True)
             plt.tight_layout()
             plt.show()
 
-            # PCA
-            try:
-                X_pca = PCA(n_components=2).fit_transform(X)
-                plt.figure(figsize=(7, 5))
-                sns.scatterplot(x=X_pca[:, 0], y=X_pca[:, 1], hue=y)
-                plt.title(f"PCA - {sensor_type}")
-                plt.tight_layout()
-                plt.show()
-            except Exception as e:
-                print(f"⚠️ PCA failed for {sensor_type}: {e}")
+    # -----------------------------
+    # 5) Return everything
+    # -----------------------------
+    out = {
+        "anova_scores": anova_scores,
+        "rf_importances": rf_importances,
+        "top_features": selected_features,
+        "selected_k": best_k,
+        "mode": "manual" if manual_mode else "auto",
+    }
 
-        results[sensor_type] = {
-            "accuracy": acc,
-            "rf_importances": rf_importances,
-            "anova_scores": k_scores,
-            "top_features": rf_importances.head(top_k).index.tolist(),
-            "X": X,
-            "y": y_encoded,
-            "df": df
-        }
+    if not manual_mode:
+        out["accuracy_curve"] = accuracy_curve
+        out["best_accuracy"] = accuracy_curve[best_k]
 
-        print(f"✅ {sensor_type} accuracy: {acc:.2f}")
+    return out
 
-    return results
+
