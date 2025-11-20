@@ -10,9 +10,9 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-from feature_extraction import prepare_combined_feature_dataframe
-from catboost import CatBoostClassifier
-from xgboost import XGBClassifier
+from core.feature_extraction import prepare_combined_feature_dataframe
+#from catboost import CatBoostClassifier
+#from xgboost import XGBClassifier
 
 def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, model_type: str = "rf", top_k=None, do_plots=True):
     """
@@ -153,5 +153,31 @@ def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, m
         out["best_accuracy"] = accuracy_curve[best_k]
 
     return out
+
+if __name__ == "__main__":
+    import pandas as pd
+    print("Loading CSV...")
+    
+    try:
+        df = pd.read_csv("results/features.csv")
+    except FileNotFoundError:
+        raise SystemExit("❌ Could not find results/features.csv. Extract features first.")
+
+    print("Running global feature analysis...")
+    res = analyze_global_features(df, top_k=None, do_plots=False)
+
+    print("\n=== SUMMARY ===")
+    print("Mode:", res["mode"])
+    print("Selected k:", res["selected_k"])
+
+    if "best_accuracy" in res:
+        print("Best accuracy:", round(res["best_accuracy"], 3))
+
+    print("\nTop features:")
+    for f in res["top_features"]:
+        print(" -", f)
+        
+    print("\nTop ANOVA F-scores:")
+    print(res["anova_scores"].head(20))
 
 
