@@ -89,7 +89,7 @@ def _infer_meta_from_path(acq_dir: Path) -> Dict[str, str]:
     rpm = _find_rpm(parts) or 'NO_RPM_VALUE'
     if condition == 'vel_fissa':
         condition = 'vel-fissa'
-    return {'condition': condition, 'belt_status': status, 'rpm': rpm, 'full_path': acq_dir}
+    return {'condition': condition, 'belt_status': status, 'rpm': rpm, 'full_path': str(acq_dir)}
 # -------------------------------------------------------------------------------
 
 def _is_hsd_folder(dir_path: Path) -> bool:
