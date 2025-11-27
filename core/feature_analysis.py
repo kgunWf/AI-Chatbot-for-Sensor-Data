@@ -14,7 +14,7 @@ from feature_extraction import prepare_combined_feature_dataframe
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
 
-def analyze_global_features(df: pd.DataFrame, top_k=None, do_plots=True):
+def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, model_type: str = "rf", top_k=None, do_plots=True):
     """
     Global cross-sensor feature analysis.
     
@@ -27,10 +27,12 @@ def analyze_global_features(df: pd.DataFrame, top_k=None, do_plots=True):
     # 1) Build cleaned + imputed DF
     # -----------------------------
 
-    meta_cols_requested = ["condition", "belt_status", "sensor", "sensor_type", "rpm"]
+    meta_cols_requested = ["condition", "belt_status", "sensor", "sensor_type", "rpm", "path"]
     meta_cols = [c for c in meta_cols_requested if c in df.columns]
     feature_cols = [c for c in df.columns if c not in meta_cols]
-
+    
+    if sensor_subset is not None:
+        df = df[df["sensor_type"].isin(sensor_subset)]
     X = df[feature_cols]
     y = df["belt_status"]
 
@@ -72,18 +74,36 @@ def analyze_global_features(df: pd.DataFrame, top_k=None, do_plots=True):
             X_train, X_test, y_train, y_test = train_test_split(
                 Xk, y_encoded, test_size=0.30, random_state=42, stratify=y_encoded
             )
-            #model = XGBClassifier(
-            #     n_estimators=400,
-            #     learning_rate=0.05,
-            #     max_depth=5,
-            #     subsample=0.9,
-            #     colsample_bytree=0.7,
-            #     eval_metric="logloss",
-            #     random_state=42
-            # )
-
-            #model = CatBoostClassifier(iterations=500, learning_rate=0.05, depth=6, verbose=0)
-            model = RandomForestClassifier(n_estimators=300, random_state=42)
+            
+            def make_model():
+                if model_type == "catboost":
+                    return CatBoostClassifier(
+                        iterations=500,
+                        depth=6,
+                        learning_rate=0.05,
+                        loss_function="Logloss",
+                        class_weights=[1, 3],
+                        verbose=0
+                    )
+                elif model_type == "xgb":
+                    pos_weight = 600 / 200  # KO:OK ratio = 3
+                    return XGBClassifier(
+                        n_estimators=400,
+                        learning_rate=0.05,
+                        max_depth=5,
+                        subsample=0.9,
+                        colsample_bytree=0.8,
+                        scale_pos_weight=pos_weight,
+                        eval_metric="logloss"
+                    )
+                else:
+                    return RandomForestClassifier(
+                        n_estimators=300,
+                        class_weight="balanced",
+                        random_state=42
+                    )
+        
+            model = make_model()
             model.fit(X_train, y_train)
             acc = accuracy_score(y_test, model.predict(X_test))
             accuracy_curve[k] = acc
@@ -100,7 +120,7 @@ def analyze_global_features(df: pd.DataFrame, top_k=None, do_plots=True):
     if do_plots:
         plt.figure(figsize=(10, 6))
         sns.barplot(x=rf_importances.head(best_k), y=rf_importances.head(best_k).index)
-        plt.title(f"Top {best_k} Global Features (Random Forest)")
+        plt.title(f"Top {best_k} Global Features")
         plt.xlabel("Importance")
         plt.tight_layout()
         plt.show()
