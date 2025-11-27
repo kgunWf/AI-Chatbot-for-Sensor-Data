@@ -2,6 +2,131 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.fft import rfft, rfftfreq
+import matplotlib.pyplot as plt
+
+
+def plot_frequency_spectrum(bag: dict, axis: str | None = None):
+    """
+    Unified, robust FFT plot for ANY supported sensor bag.
+
+    - acc/gyro/mag → FFT of x/y/z (axis="x"/"y"/"z"; axis=None => all)
+    - mic          → FFT of flattened waveform
+    - temp/hum/prs → skipped (not meaningful)
+
+    Uses ODR as the sampling rate.
+    """
+
+    sensor_type = bag.get("sensor_type")
+    sensor_name = bag.get("sensor")
+    df: pd.DataFrame = bag.get("data")
+    odr = bag.get("odr", None)
+
+    # You NEED sampling frequency for FFT
+    if not odr or odr <= 0:
+        print(f"⚠️ Skipping {sensor_name}: no valid ODR (needed for FFT).")
+        return
+
+    # -------------------------
+    # VECTOR SENSORS (acc/gyro/mag)
+    # -------------------------
+    if sensor_type in {"acc", "gyro", "mag"}:
+        axes = ["x", "y", "z"]
+        if not all(a in df.columns for a in axes):
+            print(f"⚠️ Skipping {sensor_name}: missing x/y/z columns.")
+            return
+
+        vec = df[axes].dropna()
+        if vec.empty:
+            print(f"⚠️ Skipping {sensor_name}: no x/y/z samples.")
+            return
+
+        n = len(vec)
+
+        # Time spacing = 1/odr
+        freqs = rfftfreq(n, d=1.0 / odr)
+
+        plt.figure()
+
+        if axis in axes:  # Single axis FFT
+            sig = vec[axis].to_numpy()
+            fft_vals = np.abs(rfft(sig - sig.mean()))
+            plt.plot(freqs, fft_vals, label=f"{sensor_type}_{axis}")
+
+        else:  # All axes FFT
+            for ax in axes:
+                sig = vec[ax].to_numpy()
+                fft_vals = np.abs(rfft(sig - sig.mean()))
+                plt.plot(freqs, fft_vals, label=f"{sensor_type}_{ax}")
+
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel("Magnitude")
+        plt.title(f"Frequency Spectrum – {sensor_name} [{sensor_type}]")
+        plt.xlim(0, odr/2)   # show up to Nyquist
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        return
+
+    # -------------------------
+    # MIC SENSORS
+    # -------------------------
+    if sensor_type == "mic":
+        # find mic-like columns
+        mic_cols = [
+            c for c in df.columns
+            if "mic" in c.lower() or "audio" in c.lower() or "waveform" in c.lower()
+        ]
+        mic_cols = list(dict.fromkeys(mic_cols))
+
+        if not mic_cols:
+            print(f"⚠️ Skipping {sensor_name}: no mic-like columns.")
+            return
+
+        mic_col = mic_cols[0]
+        series = df[mic_col].dropna()
+        if series.empty:
+            print(f"⚠️ Skipping {sensor_name}: mic data empty.")
+            return
+
+        # Flatten if necessary
+        first = series.iloc[0]
+        if isinstance(first, (list, tuple, np.ndarray)):
+            sig = np.concatenate([np.asarray(x).ravel() for x in series])
+        else:
+            sig = pd.to_numeric(series, errors="coerce").dropna().to_numpy()
+
+        if sig.size == 0:
+            print(f"⚠️ Skipping {sensor_name}: mic signal invalid.")
+            return
+
+        n = sig.size
+        freqs = rfftfreq(n, d=1.0 / odr)
+        fft_vals = np.abs(rfft(sig - np.mean(sig)))
+
+        plt.figure()
+        plt.plot(freqs, fft_vals)
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel("Magnitude")
+        plt.title(f"Frequency Spectrum – {sensor_name} [mic]")
+        plt.xlim(0, odr/2)
+        plt.tight_layout()
+        plt.show()
+        return
+
+    # -------------------------
+    # TEMP/HUM/PRS (skip)
+    # -------------------------
+    print(f"⚠️ Skipping {sensor_name}: FFT not applicable to sensor_type {sensor_type}.")
+
+#we can group by specific sensor names such as "iis3dwb_acc","iis2dh_acc","ism330dhcx_acc"
+def group_by_sensor_name(bags):
+    groups = {}
+    for bag in bags:
+        sensor = bag["sensor"]
+        groups.setdefault(sensor, []).append(bag)
+    return groups
+
 
 def _build_time_axis(n: int, odr: float | None):
     """Return (t, label) for the time axis."""

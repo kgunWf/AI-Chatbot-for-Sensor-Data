@@ -111,12 +111,20 @@ def test_features_by_sensor_type(root: str, sensor_type: str, limit: int = 5) ->
     print(f"\n✅ Done. Displayed {count} {sensor_type} sensor features.")
 
 def load_raw_bags(root: str, limit: int | None = None, verbose: bool = False) -> list[dict]:
-    bags = []
+    bags = []#bunu dd yap
     for i, item in enumerate(iter_hsd_items(root, only_active=True, verbose=verbose), start=1):
         bags.append(item)
         if limit is not None and i >= limit:
             break
     return bags
+    
+#we can group by specific sensor names such as "iis3dwb_acc","iis2dh_acc","ism330dhcx_acc"
+def group_by_sensor_name(bags):
+    groups = {}
+    for bag in bags:
+        sensor = bag["sensor"]
+        groups.setdefault(sensor, []).append(bag)
+    return groups
 
 def filter_bags(
     bags: list[dict],
