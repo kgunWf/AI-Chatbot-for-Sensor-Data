@@ -3,6 +3,7 @@ import pandas as pd
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import skew, kurtosis, entropy
 from sklearn.impute import SimpleImputer
+import python_speech_features as psf
 
 def _to_float(val):
     """Safely convert numpy or array values to Python float."""
@@ -67,7 +68,30 @@ def extract_scalar_stats(signal: np.ndarray, prefix: str) -> dict:
         f"{prefix}_rms": _to_float(np.sqrt(np.mean(signal ** 2))),
         f"{prefix}_skew": skew_val,
         f"{prefix}_kurt": kurt_val,
+        # Rolling variance
+        f"{prefix}_rolling_std" : float(pd.Series(signal).rolling(10, min_periods=1).std().mean()),
+        # First derivative mean
+        f"{prefix}_derivative_mean" : float(np.mean(np.diff(signal))),
+        # IQR
+        f"{prefix}_iqr" : float(np.percentile(signal, 75) - np.percentile(signal, 25))
     }
+
+def spectral_centroid(freqs, magnitudes):
+    return np.sum(freqs * magnitudes) / (np.sum(magnitudes) + 1e-12)
+
+def spectral_rolloff(freqs, magnitudes, roll_percent=0.85):
+    cumulative = np.cumsum(magnitudes)
+    threshold = roll_percent * cumulative[-1]
+    return freqs[np.searchsorted(cumulative, threshold)]
+
+def spectral_flatness(magnitudes):
+    gm = np.exp(np.mean(np.log(magnitudes + 1e-12)))
+    am = np.mean(magnitudes)
+    return gm / (am + 1e-12)
+
+def band_energy(magnitudes, freqs, low, high):
+    mask = (freqs >= low) & (freqs <= high)
+    return np.sum(magnitudes[mask])
 
 def extract_features_from_bag(bag: dict) -> dict:
     sensor_type = bag["sensor_type"]
@@ -78,11 +102,12 @@ def extract_features_from_bag(bag: dict) -> dict:
         "condition": bag["condition"],
         "belt_status": bag["belt_status"],
         "sensor": bag["sensor"],
+        "path": bag["path"],
         "sensor_type": sensor_type,
         "rpm": bag["rpm"],
     }
 
-    # === VECTOR SIGNALS ===
+# === VECTOR SIGNALS ===
     if sensor_type in {"acc", "gyro", "mag"}:
         print(f"🪲 [scalar] Processing {sensor_type} from {bag['sensor']}")
         print(f"🪲 DataFrame columns: {list(df.columns)}")
@@ -95,11 +120,39 @@ def extract_features_from_bag(bag: dict) -> dict:
             prefix = sensor_type
             out.update(extract_vector_stats(sig, prefix))
 
+            # Compute FFT spectrum
             if odr and odr > 100:
                 fft_vals = np.abs(rfft(sig - sig.mean(axis=0), axis=0))
                 freqs = rfftfreq(sig.shape[0], d=1.0 / odr)
+
                 for i, axis in enumerate(["x", "y", "z"][:sig.shape[1]]):
-                    out[f"{prefix}_dom_freq_{axis}"] = float(freqs[np.argmax(fft_vals[:, i])])
+                    magn = fft_vals[:, i]
+
+                    # Spectral centroid
+                    out[f"{prefix}_spec_centroid_{axis}"] = spectral_centroid(freqs, magn)
+
+                    # Spectral rolloff
+                    out[f"{prefix}_spec_rolloff_{axis}"] = spectral_rolloff(freqs, magn)
+
+                    # Spectral flatness
+                    out[f"{prefix}_spec_flatness_{axis}"] = spectral_flatness(magn)
+
+                    # Entropy
+                    p = magn / (np.sum(magn) + 1e-12)
+                    out[f"{prefix}_spec_entropy_{axis}"] = entropy(p)
+
+                    # Band energies (domain-specific — example values)
+                    out[f"{prefix}_band_energy_low_{axis}"]  = band_energy(magn, freqs, 0, odr/10)
+                    out[f"{prefix}_band_energy_mid_{axis}"]  = band_energy(magn, freqs, odr/10, odr/5)
+                    out[f"{prefix}_band_energy_high_{axis}"] = band_energy(magn, freqs, odr/5, odr/2)
+
+                    # Harmonic ratio (2nd peak / 1st peak)
+                    peak1 = np.argmax(magn)
+                    magn2 = magn.copy()
+                    magn2[peak1] = 0
+                    peak2 = np.argmax(magn2)
+                    out[f"{prefix}_harmonic_ratio_{axis}"] = magn2[peak2] / (magn[peak1] + 1e-12)
+
         except KeyError as e:
             print(f"⚠️ Missing expected axis in {bag['sensor']}: {e}")
             return out
@@ -164,6 +217,36 @@ def extract_features_from_bag(bag: dict) -> dict:
             p = psd / (np.sum(psd) + 1e-12)
             out["mic_freq_entropy"] = _to_float(entropy(p, base=2))
 
+            # Compute MFCCs
+            winlen = 0.025  # 25 ms
+            winstep = 0.010 # 10 ms
+
+            samplerate = int(odr)  # microphone ODR
+
+            frame_length = int(winlen * samplerate)
+
+            # Compute dynamic nfft (next power of 2 ≥ frame_length)
+            nfft = 1
+            while nfft < frame_length:
+                nfft *= 2
+
+            # Now extract MFCC safely
+            mfccs = psf.mfcc(
+                sig.astype(float),
+                samplerate=samplerate,
+                numcep=8,
+                winlen=winlen,
+                winstep=winstep,
+                nfft=nfft
+            )
+
+            # Export mean MFCCs
+            mfcc_mean = np.mean(mfccs, axis=0)
+            for i, val in enumerate(mfcc_mean):
+                out[f"mic_mfcc_{i+1}"] = float(val)
+
+
+
     # === SCALAR SIGNALS: TEMP, HUM, PRS ===
     elif sensor_type in {"temp", "hum", "prs"}:
         #debugging info
@@ -216,7 +299,7 @@ def prepare_combined_feature_dataframe(bags: list[dict]) -> pd.DataFrame:
     )
 
     # Keep metadata but treat all others as features
-    meta_cols = ["condition", "belt_status", "sensor", "sensor_type", "rpm"]
+    meta_cols = ["condition", "belt_status", "sensor", "sensor_type", "rpm", "path"]
     feature_cols = [c for c in df.columns if c not in meta_cols]
 
     # Convert all features to numeric (non-numeric → NaN)
