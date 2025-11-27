@@ -3,10 +3,11 @@ import os
 from pathlib import Path
 from typing import Iterable, Dict, List
 from unittest import result
-
+import json
 from stdatalog_loader import iter_hsd_items
 from feature_extraction import extract_features_from_bag, extract_features_from_bags, prepare_combined_feature_dataframe
 from feature_analysis import analyze_global_features
+from per_sensor_analysis import analyze_per_sensor_fusion
 
 import pandas as pd
 
@@ -56,10 +57,10 @@ def test_hsd_loader_with_features(root: str, limit: int = 10, fetch_all: bool = 
             print("\nFeature preview (first 5 rows, first 50 cols):")
             print(cleaned_df.iloc[:5, :50])
 
-    return cleaned_df
+    return feature_dicts, cleaned_df
 
 
-def test_feature_importance_analysis(df: pd.DataFrame, limit: int = None):
+def test_feature_importance_analysis(df: pd.DataFrame, limit: int = None, sensor_subset: list[str] = None) -> None:
     """
     Runs GLOBAL feature importance analysis across ALL sensors.
     Produces:
@@ -76,11 +77,11 @@ def test_feature_importance_analysis(df: pd.DataFrame, limit: int = None):
         print(df.head())
     if limit is not None:
         # 1. Manual mode: user provides top_k
-        result = analyze_global_features(df, top_k=limit, do_plots=True)
+        result = analyze_global_features(df, sensor_subset=sensor_subset, top_k=limit, do_plots=True)
         print(f"\nTop {limit} features (manual mode):")
         print(result["top_features"])
     # 2. Run global analysis-in auto mode
-    result = analyze_global_features(df, do_plots=True)
+    result = analyze_global_features(df, sensor_subset=sensor_subset, do_plots=True)
     print("Auto-selected K =", result["selected_k"])
     print("Best accuracy =", result["best_accuracy"])
     print(result["top_features"])
@@ -162,21 +163,54 @@ if __name__ == "__main__":
 
     if args.load_features:
         print(f"📥 Loading features from: {args.load_features}")
-        cleaned_df = pd.read_csv(args.load_features)
-        test_feature_importance_analysis(cleaned_df)
+        cleaned_df_path = args.load_features + "/cleaned_df.csv"
+        cleaned_df = pd.read_csv(cleaned_df_path)
+
+        feature_dicts_path = args.load_features + "/dictionary.json"
+        with open(feature_dicts_path, "r") as f:
+            feature_dicts = json.load(f)
+
+        print(cleaned_df["belt_status"].value_counts())
+       # print(cleaned_df.groupby("path")["sensor_type"].apply(list).head(20))
+
+
+        if cleaned_df is None:
+            df = prepare_combined_feature_dataframe(feature_dicts)
+        else:
+            df = cleaned_df
+
+        #sensor subset defines the most important sensors to consider during feature analysis, temp, hum, prs are not very relevant, and hum doesn't have data
+        sensor_subset = ["acc", "mic", "mag"]
+        test_feature_importance_analysis(cleaned_df, sensor_subset=sensor_subset)
         raise SystemExit(0)
     
 
     if args.features or args.save_features:
-        cleaned_df = test_hsd_loader_with_features(args.root, limit=args.limit, verbose=(not args.quiet))
 
+        feature_dicts, cleaned_df = test_hsd_loader_with_features(
+            args.root,
+            limit=args.limit,
+            verbose=(not args.quiet)
+        )
+
+        # If user specifies a directory in args.save_features
         if args.save_features:
-            out_path = args.save_features
-            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-            cleaned_df.to_csv(out_path, index=False)
-            print(f"\n✅ Saved extracted features to: {out_path}")
+            out_dir = args.save_features
+            os.makedirs(out_dir, exist_ok=True)
+
+            # ---- Save dictionary.json ----
+            dict_path = os.path.join(out_dir, "dictionary.json")
+            with open(dict_path, "w") as f:
+                json.dump(feature_dicts, f, indent=4)
+            print(f"✅ Saved features_dict to: {dict_path}")
+
+            # ---- Save cleaned_df.csv ----
+            df_path = os.path.join(out_dir, "cleaned_df.csv")
+            cleaned_df.to_csv(df_path, index=False)
+            print(f"✅ Saved cleaned_df to: {df_path}")
 
         test_feature_importance_analysis(cleaned_df, limit=20)
+
 
     else:
         test_hsd_loader(args.root, limit=args.limit, verbose=(not args.quiet))
