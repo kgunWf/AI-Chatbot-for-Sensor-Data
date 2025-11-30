@@ -7,8 +7,6 @@ import json
 from stdatalog_loader import iter_hsd_items
 from feature_extraction import extract_features_from_bag, extract_features_from_bags, prepare_combined_feature_dataframe
 from feature_analysis import analyze_global_features
-from per_sensor_analysis import analyze_per_sensor_fusion
-
 import pandas as pd
 
 
@@ -134,6 +132,7 @@ def filter_bags(
     sensor: str | None = None,
     belt_status: str | None = None,
     condition: str | None = None,
+    rpm: str |None=None,
 ) -> list[dict]:
     """
     Return only the bags that match the given criteria.
@@ -150,6 +149,8 @@ def filter_bags(
             continue #keep only the bags that match the given belt status(e.g. OK, KO_HIGH_2mm, KO_LOW_2mm,)#
         if condition is not None and str(b["condition"]) != condition:
             continue #keep only the bags that match the given condition(e.g. vel-fissa, no-load-cycles)
+        if rpm is not None and str(b["rpm"]) != condition:
+            continue #keep only the bags that match the given condition(e.g. PMS_50rpm etc)
         out.append(b)
     return out
 
