@@ -86,9 +86,10 @@ if prompt:
     # 1. save user message
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 2. generate bot reply (replace this with your model / API call)
-    # TODO: call backend here
-    bot_reply = f"You said: {prompt}"
+    # 2. Show spinner while generating reply
+    with st.spinner("Thinking..."):
+        # TODO: call backend/model here
+        bot_reply = f"You said: {prompt}"
 
     # 3. save bot message
     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
