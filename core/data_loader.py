@@ -7,8 +7,6 @@ import json
 from stdatalog_loader import iter_hsd_items
 from feature_extraction import extract_features_from_bag, extract_features_from_bags, prepare_combined_feature_dataframe
 from feature_analysis import analyze_global_features
-from per_sensor_analysis import analyze_per_sensor_fusion
-
 import pandas as pd
 
 
