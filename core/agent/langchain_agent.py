@@ -1,80 +1,55 @@
 # agent/agent_implementation.py
 
-from langchain.agents import initialize_agent, AgentType
-from langchain.tools import Tool
+from langchain.agents import create_pandas_dataframe_agent, initialize_agent, AgentType
 from langchain.llms import LlamaCpp  # or OpenAI/HuggingFaceHub if you prefer
-from agent.command_parser import parse_command
-from agent.prompt_templates import agent_system_message
+from agent.tools import plot_tools, feature_tools
+from agent.prompt_templates import get_custom_system_prompt
 
-# Import your actual business logic
-from core.plotting import plot_time_series, plot_frequency_spectrum
-from core.stats_engine import get_top_features
+import pandas as pd
 
-import matplotlib.pyplot as plt
-import streamlit as st
-import tempfile
-import os
+def build_combined_agent(path: str = "../feature_sets"):
 
-# 1. ✅ Load Local Model
-llm = LlamaCpp(
-    model_path="./models/llama-2-7b.Q4_K_M.gguf",
-    temperature=0.7,
-    max_tokens=512,
-    n_ctx=2048,
-    verbose=False
-)
+    df_path = path + "/cleaned_df.csv"
+    df = pd.read_csv(df_path)
 
-# 2. ✅ Define LangChain-compatible Tools
-def show_top_features(_):
-    features = get_top_features().head(5)
-    st.write("Top 5 Features by Class Separation:")
-    st.table(features)
-    return "Displayed feature ranking."
+    llm = LlamaCpp(
+        model_path="./models/llama-2-7b.Q4_K_M.gguf",
+        temperature=0,
+        max_tokens=512,
+        n_ctx=2048,
+        verbose=False
+    )
+    #combine all tools
+    tools = plot_tools + feature_tools
+    #get custom prompt 
+    custom_prompt = get_custom_system_prompt()
 
-def plot_sensor(sensor: str, condition: str, domain: str):
-    if domain == "time":
-        fig = plot_time_series(sensor=sensor, condition=condition)
-    else:
-        fig = plot_frequency_spectrum(sensor=sensor, condition=condition)
+    # Combine tools + df access with the LLM
+    agent = create_pandas_dataframe_agent(
+        llm=llm,
+        df=df,
+        tools=tools,
+        verbose=True,
+        handle_parsing_errors=True,
+        agent_executor_kwargs={
+            "system_message": custom_prompt
+        }
+    )
 
-    st.pyplot(fig)
-    return f"Here is the {domain} domain plot for {sensor}, {condition} samples."
+    return agent
 
-# To keep it LangChain-compatible, wrap args in a single input string
-def plot_sensor_wrapper(query: str):
-    # crude parsing from natural string like "mic KO time"
-    try:
-        parts = query.lower().split()
-        sensor, condition, domain = parts[0], parts[1].upper(), parts[2]
-        return plot_sensor(sensor, condition, domain)
-    except Exception:
-        return "Error: please specify like 'acc KO time'."
 
-tools = [
-    Tool(
-        name="FeatureAnalysis",
-        func=show_top_features,
-        description="Use this to display the most important sensor features."
-    ),
-    Tool(
-        name="PlotSensor",
-        func=plot_sensor_wrapper,
-        description="Use this to plot a sensor signal. Input format: '<sensor> <OK/KO> <time/frequency>'"
-    ),
-]
+#strealit entry point
+# from agent.langchain_agent import build_combined_agent
+# import streamlit as st
+# agent = build_combined_agent()
 
-# 3. ✅ Initialize the LangChain Agent
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=True
-)
+# st.title("Sensor Assistant")
 
-# 4. ✅ Entry Point Called from Streamlit
-def run_chat_response(user_input: str):
-    try:
-        response = agent.run(user_input)
-        return response
-    except Exception as e:
-        return f"Agent failed: {str(e)}"
+# query = st.text_input("Ask about the data (e.g., 'show top features', 'plot acc KO time')")
+# if query:
+#     try:
+#         response = agent.run(query)
+#         st.write(response)
+#     except Exception as e:
+#         st.error(f"Agent error: {e}")
