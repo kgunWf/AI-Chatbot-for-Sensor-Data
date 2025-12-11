@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.fft import rfft, rfftfreq
 import matplotlib.pyplot as plt
-
+from data_loader import load_raw_bags, filter_bags,group_by_sensor_name
 
 def plot_frequency_spectrum(bag: dict, axis: str | None = None):
     """
@@ -119,13 +119,6 @@ def plot_frequency_spectrum(bag: dict, axis: str | None = None):
     # -------------------------
     print(f"⚠️ Skipping {sensor_name}: FFT not applicable to sensor_type {sensor_type}.")
 
-#we can group by specific sensor names such as "iis3dwb_acc","iis2dh_acc","ism330dhcx_acc"
-def group_by_sensor_name(bags):
-    groups = {}
-    for bag in bags:
-        sensor = bag["sensor"]
-        groups.setdefault(sensor, []).append(bag)
-    return groups
 
 
 def _build_time_axis(n: int, odr: float | None):
@@ -314,3 +307,31 @@ def plot_time_series(bag: dict, axis: str | None = None) -> None:
     # UNSUPPORTED SENSOR TYPE
     # -------------------------
     print(f"⚠️ Skipping {sensor_name}: unsupported sensor_type '{sensor_type}'.")
+
+#function that plots the bags according to the provided filters
+#we assume that the bags are loaded somewhere else
+def time_plot(
+    bags: list[dict],
+    sensor_type: str | None = None,
+    sensor: str | None = None,
+    belt_status: str | None = None,
+    condition: str | None = None,
+    rpm: str |None=None,
+) -> list[dict]:
+    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
+    #bags = load_raw_bags(root, verbose=False)
+    #print("Total bags loaded:", len(bags))
+
+    # Example: KO acc sensors → plot all axes
+    filtered_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
+
+    #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
+    grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
+
+    representatives = {
+         name: cycles[0] #key = sensor name and value = the first recording for that sensor
+         for name, cycles in grouped_acc.items()
+     }
+
+    for bag in representatives.values():
+         plot_time_series(bag)

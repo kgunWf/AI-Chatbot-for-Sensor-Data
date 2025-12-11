@@ -1,7 +1,7 @@
 # plot_demo_raw.py
 import os
 from data_loader import load_raw_bags, filter_bags,group_by_sensor_name
-from plotting import plot_time_series,plot_frequency_spectrum
+from plotting import plot_time_series,plot_frequency_spectrum,time_plot
 from stdatalog_loader import iter_hsd_items
 import os
 from pathlib import Path
@@ -14,33 +14,32 @@ from feature_analysis import analyze_global_features
 import pandas as pd
 def main():
     root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
-
-
     bags = load_raw_bags(root, verbose=False)
     print("Total bags loaded:", len(bags))
+    time_plot(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
 
     # Example: KO acc sensors → plot all axes
-    ko_acc_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
+    # ko_acc_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
 
-    #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
-    grouped_acc = group_by_sensor_name(ko_acc_bags)#this is a dictionary
+    # #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
+    # grouped_acc = group_by_sensor_name(ko_acc_bags)#this is a dictionary
 
-    representatives = {
-         name: cycles[0] #key = sensor name and value = the first recording for that sensor
-         for name, cycles in grouped_acc.items()
-     }
+    # representatives = {
+    #      name: cycles[0] #key = sensor name and value = the first recording for that sensor
+    #      for name, cycles in grouped_acc.items()
+    #  }
 
-    for bag in representatives.values():
-         plot_time_series(bag)
+    # for bag in representatives.values():
+    #      plot_time_series(bag)
 
-    print("KO acc bags:", [b["sensor"] for b in ko_acc_bags])
-    print("grouped acc sensors (grouped):", list(grouped_acc.keys()))
+    # print("KO acc bags:", [b["sensor"] for b in ko_acc_bags])
+    # print("grouped acc sensors (grouped):", list(grouped_acc.keys()))
 
-    vel_fissa_bags = [b for b in bags if b["condition"] == "vel-fissa"]
+    # vel_fissa_bags = [b for b in bags if b["condition"] == "vel-fissa"]
 
-    acc_vel_fissa = [b for b in vel_fissa_bags if b["sensor_type"] == "acc"]
+    # acc_vel_fissa = [b for b in vel_fissa_bags if b["sensor_type"] == "acc"]
 
-    print("Vel-fissa acc belt_status values:", sorted({b["belt_status"] for b in acc_vel_fissa}))
+    # print("Vel-fissa acc belt_status values:", sorted({b["belt_status"] for b in acc_vel_fissa}))
 
 
 
