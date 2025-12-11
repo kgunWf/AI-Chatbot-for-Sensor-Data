@@ -141,10 +141,16 @@ def _normalize_dataframe(obj) -> Optional[pd.DataFrame]:
 
 def _iter_acquisition_dirs(root: Path) -> Iterator[Path]:
     # Consider leaf directories named STWIN_* or any dir that passes _is_hsd_folder
+    
     for d in root.rglob('*'):
         if d.is_dir() and (d.name.upper().startswith('STWIN_') or _is_hsd_folder(d)):
             if _is_hsd_folder(d):
+                print(d)
                 yield d
+        elif d.suffix.lower()=='.dat':
+                print("inside folder: ", d.parent)
+                yield d.parent
+                return
 
 def iter_hsd_items(root: str | Path, only_active: bool=True, verbose: bool=False) -> Iterator[Dict[str, object]]:
     if HSDatalog is None:
@@ -173,10 +179,12 @@ def iter_hsd_items(root: str | Path, only_active: bool=True, verbose: bool=False
 
             # Fetch list of active sensors
             sensor_names = hsd.get_sensor_list(hsd_instance, only_active=only_active)
+
             if sensor_names and not isinstance(sensor_names[0], str):
                 sensor_names = [hsd.get_sensor_name(hsd_instance, s) for s in sensor_names]
 
             for sensor_name in sensor_names:
+                print("print sensor name:", sensor_name)
                 sensor = hsd.get_sensor(hsd_instance, sensor_name)
                 df_obj = hsd.get_dataframe(hsd_instance, sensor)
 
@@ -188,6 +196,7 @@ def iter_hsd_items(root: str | Path, only_active: bool=True, verbose: bool=False
                             continue
 
                         full_sensor_name = norm(f"{sensor_name}_{sub_key}")  # e.g. lps22hh_PRESS
+                        print("fetched subsensor: ", full_sensor_name)
                         sensor_type = get_sensor_type(full_sensor_name)
                         odr = odr_map.get(full_sensor_name)
                         df = normalize_sensor_columns(df, sensor_name)
