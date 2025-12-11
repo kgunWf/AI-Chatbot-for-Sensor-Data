@@ -12,11 +12,13 @@ from stdatalog_loader import iter_hsd_items
 from feature_extraction import extract_features_from_bag, extract_features_from_bags, prepare_combined_feature_dataframe
 from feature_analysis import analyze_global_features
 import pandas as pd
+
 def main():
-    root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
-    bags = load_raw_bags(root, verbose=False)
+    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm")
+    bags = load_raw_bags(root="/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm/",verbose=False)#list of dictionaries
     print("Total bags loaded:", len(bags))
-    time_plot(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
+    time_plot(bags, sensor_type="temp")
+
 
     # Example: KO acc sensors → plot all axes
     # ko_acc_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
