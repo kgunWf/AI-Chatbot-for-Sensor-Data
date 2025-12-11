@@ -349,7 +349,7 @@ def freq_plot(
     #print("Total bags loaded:", len(bags))
 
     # Example: KO acc sensors → plot all axes
-    filtered_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
+    filtered_bags = filter_bags(bags, sensor_type, belt_status,rpm,condition)
 
     #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
     grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
