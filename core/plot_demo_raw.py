@@ -1,7 +1,7 @@
 # plot_demo_raw.py
 import os
 from data_loader import load_raw_bags, filter_bags,group_by_sensor_name
-from plotting import plot_time_series,plot_frequency_spectrum,time_plot
+from plotting import plot_time_series,plot_frequency_spectrum,time_plot,freq_plot
 from stdatalog_loader import iter_hsd_items
 import os
 from pathlib import Path
@@ -14,10 +14,11 @@ from feature_analysis import analyze_global_features
 import pandas as pd
 
 def main():
-    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm")
+    root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm")
     bags = load_raw_bags(root="/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm/",verbose=False)#list of dictionaries
     print("Total bags loaded:", len(bags))
     time_plot(bags, sensor_type="temp")
+    freq_plot(bags, sensor_type="temp")
 
 
     # Example: KO acc sensors → plot all axes
