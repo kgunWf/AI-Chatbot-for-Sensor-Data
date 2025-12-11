@@ -41,3 +41,26 @@ class SensorDataAgent:
         Passes any user query to the agent.
         """
         return self.agent.run(query)
+
+#Streamlit Entry Point
+# streamlit_app.py
+# import streamlit as st
+# from agent.agent_implementation import SensorDataAgent
+
+# st.title("Sensor Data Assistant")
+
+# agent = SensorDataAgent(
+#     df_path="../output_dir/cleaned_df.csv",
+#     model_path="./models/llama-2-7b.Q4_K_M.gguf"
+# )
+
+# query = st.text_input(
+#     "Ask something (e.g. 'plot acc KO time', 'show top features')"
+# )
+
+# if query:
+#     try:
+#         response = agent.run(query)
+#         st.write(response)
+#     except Exception as e:
+#         st.error(f"Agent error: {e}")
