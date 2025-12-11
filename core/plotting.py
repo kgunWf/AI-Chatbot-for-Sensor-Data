@@ -323,6 +323,32 @@ def time_plot(
     #print("Total bags loaded:", len(bags))
 
     # Example: KO acc sensors → plot all axes
+    filtered_bags = filter_bags(bags, sensor_type, belt_status,rpm,condition)
+
+    #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
+    grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
+
+    representatives = {
+         name: cycles[0] #key = sensor name and value = the first recording for that sensor
+         for name, cycles in grouped_acc.items()
+     }
+
+    for bag in representatives.values():
+         plot_time_series(bag)
+
+def freq_plot(
+    bags: list[dict],
+    sensor_type: str | None = None,
+    sensor: str | None = None,
+    belt_status: str | None = None,
+    condition: str | None = None,
+    rpm: str |None=None,
+) -> list[dict]:
+    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
+    #bags = load_raw_bags(root, verbose=False)
+    #print("Total bags loaded:", len(bags))
+
+    # Example: KO acc sensors → plot all axes
     filtered_bags = filter_bags(bags, sensor_type="temp", belt_status="KO_LOW_4mm",rpm="PMI_50rpm",condition="vel-fissa")
 
     #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
