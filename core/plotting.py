@@ -347,10 +347,7 @@ def freq_plot(
     condition: str | None = None,
     rpm: str |None=None,
 ) -> list[dict]:
-    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
-    #bags = load_raw_bags(root, verbose=False)
-    #print("Total bags loaded:", len(bags))
-
+   
     # Example: KO acc sensors → plot all axes
     filtered_bags = filter_bags(
     bags,
@@ -359,11 +356,17 @@ def freq_plot(
     belt_status=belt_status,
     condition=condition,
     rpm=rpm)
-    
+
+    #if sensor_type=="temp" or sensor_type=="hum" or "pressure"
+    if sensor_type in {"temp", "hum", "prs", "pressure"}:
+        print(f"⚠️ Frequency plots are not meaningful for sensor_type='{sensor_type}'. Skipping.")
+        return
+
     #print a warning if no bags match the filter condition
     if not filtered_bags:
         print("⚠️ No bags matched the given filters; nothing to plot.")
         return
+
 
     #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
     grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
@@ -375,3 +378,27 @@ def freq_plot(
 
     for bag in representatives.values():
         plot_frequency_spectrum(bag)
+
+# def plotting(
+#      bags: list[dict],
+#      sensor_type: str | None = None,
+#      sensor: str | None = None,
+#      belt_status: str | None = None,
+#      condition: str | None = None,
+#      rpm: str |None=None,
+#      plot_type: str|None=None
+
+#  ) -> list[dict]:
+
+#     #merge the ouput dir
+#     #path should be like: "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm/"
+#     path = ""
+
+#     bags = load_raw_bags(root=path,verbose=False)#list of dictionaries
+
+#     if plot_type == "time":
+#         time_plot(bags, sensor_type)
+#     elif plot_type == "frequency":
+#         freq_plot(bags, sensor_type)
+#     else:
+#         print(f"⚠️ Unknown plot_type='{plot_type}'. Use 'time' or 'frequency'.")
