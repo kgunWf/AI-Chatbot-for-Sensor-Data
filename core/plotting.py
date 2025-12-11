@@ -318,12 +318,15 @@ def time_plot(
     condition: str | None = None,
     rpm: str |None=None,
 ) -> list[dict]:
-    #root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN")
-    #bags = load_raw_bags(root, verbose=False)
-    #print("Total bags loaded:", len(bags))
+   
 
-    # Example: KO acc sensors → plot all axes
+    # filter the bags based on given condition
     filtered_bags = filter_bags(bags, sensor_type, belt_status,rpm,condition)
+
+    #print a warning if no bags match the filter condition
+    if not filtered_bags:
+        print("⚠️ No bags matched the given filters; nothing to plot.")
+        return
 
     #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
     grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
@@ -349,7 +352,18 @@ def freq_plot(
     #print("Total bags loaded:", len(bags))
 
     # Example: KO acc sensors → plot all axes
-    filtered_bags = filter_bags(bags, sensor_type, belt_status,rpm,condition)
+    filtered_bags = filter_bags(
+    bags,
+    sensor_type=sensor_type,
+    sensor=sensor,
+    belt_status=belt_status,
+    condition=condition,
+    rpm=rpm)
+    
+    #print a warning if no bags match the filter condition
+    if not filtered_bags:
+        print("⚠️ No bags matched the given filters; nothing to plot.")
+        return
 
     #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
     grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
@@ -360,4 +374,4 @@ def freq_plot(
      }
 
     for bag in representatives.values():
-         plot_time_series(bag)
+        plot_frequency_spectrum(bag)
