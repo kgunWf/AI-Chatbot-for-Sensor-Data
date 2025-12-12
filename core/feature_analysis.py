@@ -14,7 +14,7 @@ from core.feature_extraction import prepare_combined_feature_dataframe
 #from catboost import CatBoostClassifier
 #from xgboost import XGBClassifier
 
-def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, model_type: str = "rf", top_k=None, do_plots=True):
+def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, model_type: str = "rf", top_k=None, do_plots=False):
     """
     Global cross-sensor feature analysis.
     
