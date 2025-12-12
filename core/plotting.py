@@ -4,7 +4,51 @@ import numpy as np
 import pandas as pd
 from scipy.fft import rfft, rfftfreq
 import matplotlib.pyplot as plt
-from data_loader import load_raw_bags, filter_bags,group_by_sensor_name
+
+
+def load_raw_bags(root: str, limit: int | None = None, verbose: bool = False) -> list[dict]:
+    bags = []#bunu dd yap
+    for i, item in enumerate(iter_hsd_items(root, only_active=True, verbose=verbose), start=1):
+        bags.append(item)
+        if limit is not None and i >= limit:
+            break
+    return bags
+    
+#we can group by specific sensor names such as "iis3dwb_acc","iis2dh_acc","ism330dhcx_acc"
+def group_by_sensor_name(bags):
+    groups = {}
+    for bag in bags:
+        sensor = bag["sensor"]
+        groups.setdefault(sensor, []).append(bag)
+    return groups
+
+def filter_bags(
+    bags: list[dict],
+    sensor_type: str | None = None,
+    sensor: str | None = None,
+    belt_status: str | None = None,
+    condition: str | None = None,
+    rpm: str |None=None,
+) -> list[dict]:
+    """
+    Return only the bags that match the given criteria.
+    Any argument left as None is ignored.
+    """
+    out = []
+    for b in bags:
+        if sensor_type is not None and b["sensor_type"] != sensor_type:
+            continue #keep only the bags that match the given sensor type
+        if sensor is not None and b["sensor"] != sensor:
+            continue #keep only the bags that match the given sensor name (e.g. IIS3DWB etc.)
+        #burda ko, low, 2mm tek tek de filtrelenebilir
+        if belt_status is not None and str(b["belt_status"]) != belt_status:
+            continue #keep only the bags that match the given belt status(e.g. OK, KO_HIGH_2mm, KO_LOW_2mm,)#
+        if condition is not None and str(b["condition"]) != condition:
+            continue #keep only the bags that match the given condition(e.g. vel-fissa, no-load-cycles)
+        if rpm is not None and str(b["rpm"]) != rpm:
+            continue #keep only the bags that match the given condition(e.g. PMS_50rpm etc)
+        out.append(b)
+    return out
 
 def plot_frequency_spectrum(bag: dict, axis: str | None = None):
     """
