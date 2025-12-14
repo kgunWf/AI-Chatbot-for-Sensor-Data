@@ -50,3 +50,6 @@ __MACOSX/
 *~  # backup files
 
 stdatalog-pysdk/
+
+data/
+*.dat

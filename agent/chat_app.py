@@ -1,8 +1,31 @@
 # streamlit_app.py
 
 import streamlit as st
-from agent_implementation import SensorDataAgent, CSV_PATH, MODEL_PATH
+from agent_implementation import SensorDataAgent, CSV_PATH, DATA_PATH
 import time
+
+def normalize_user_prompt(prompt: str) -> str:
+    """
+    Light normalization to help the agent + tools.
+    This does NOT execute logic, only rewrites intent.
+    """
+    p = prompt.lower().strip()
+
+    # ---- Feature analysis shortcuts
+    if any(k in p for k in ["top features", "feature importance", "important features"]):
+        return "show top features"
+
+    # ---- Dataset inspection shortcuts
+    if any(k in p for k in ["dataset", "structure", "available sensors", "info"]):
+        return "show dataset info"
+
+    # ---- Plot intent normalization
+    if p.startswith("plot ") or p.startswith("show "):
+        # strip leading verbs, tools don't need them
+        p = p.replace("plot ", "").replace("show ", "")
+
+    return p
+
 
 st.set_page_config(
     page_title="Sensor Data AI Agent",
@@ -46,7 +69,7 @@ def load_agent():
         try:
             agent = SensorDataAgent(
                 df_path=str(CSV_PATH),
-                model_path=str(MODEL_PATH),
+                path_to_data=str(DATA_PATH),
             )
             return agent, None
         except Exception as e:
@@ -58,68 +81,80 @@ if error:
     st.error(f"❌ Failed to load agent: {error}")
     st.stop()
 
-# Sidebar with dataset info and quick actions
+# -------------------------------------------------
+# Sidebar: Dataset overview + quick actions
+# -------------------------------------------------
 with st.sidebar:
     st.markdown("### 📊 Dataset Overview")
-    
+
     try:
         summary = agent.get_dataset_summary()
-        
+
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Samples", summary['total_samples'])
+            st.metric("Total Samples", summary["total_samples"])
         with col2:
-            st.metric("Features", len(summary['columns']))
-        
+            st.metric("Features", len(summary["columns"]))
+
         col3, col4 = st.columns(2)
         with col3:
-            st.metric("OK Samples", summary['ok_samples'], delta_color="off")
+            st.metric("OK Samples", summary["ok_samples"], delta_color="off")
         with col4:
-            st.metric("KO Samples", summary['ko_samples'], delta_color="off")
-            
+            st.metric("KO Samples", summary["ko_samples"], delta_color="off")
+
     except Exception as e:
         st.warning(f"Could not load dataset summary: {e}")
-    
+
     st.markdown("---")
-    
+
+    # -----------------------------
+    # Quick Actions (tool-aligned)
+    # -----------------------------
     st.markdown("### 🚀 Quick Actions")
-    
-    if st.button("📋 Show Dataset Info", use_container_width=True):
-        with st.spinner("Fetching dataset information..."):
-            response = agent.run("Show me the dataset structure and available sensors")
-            st.session_state.messages.append({"role": "user", "content": "Show dataset info"})
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
+
+    if st.button("📋 Dataset Info", use_container_width=True):
+        st.session_state.pending_query = "show dataset info"
+        st.rerun()
+
     if st.button("⭐ Top Features", use_container_width=True):
-        with st.spinner("Analyzing discriminative features..."):
-            response = agent.run("Show me the most important features that discriminate between OK and KO")
-            st.session_state.messages.append({"role": "user", "content": "Show top features"})
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
+        st.session_state.pending_query = "show top features"
+        st.rerun()
+
+    if st.button("📈 ACC – OK – Time", use_container_width=True):
+        st.session_state.pending_query = "acc OK time"
+        st.rerun()
+
+    if st.button("📊 MIC – KO – Frequency", use_container_width=True):
+        st.session_state.pending_query = "mic KO frequency"
+        st.rerun()
+
     st.markdown("---")
-    
+
+    # -----------------------------
+    # Example Queries (executable)
+    # -----------------------------
     st.markdown("### 💡 Example Queries")
-    
+
     examples = [
-        "Plot time series of acc for OK samples",
-        "Show frequency spectrum of mic for KO",
-        "What are the top discriminative features?",
-        "Plot gyro KO time vel-fissa",
-        "Show me frequency plot for mag OK"
+        "acc OK time",
+        "mic KO frequency",
+        "gyro KO time vel-fissa",
+        "mag OK frequency",
+        "show top features",
+        "show dataset info",
     ]
-    
+
     for example in examples:
-        if st.button(f"📌 {example}", key=example, use_container_width=True):
+        if st.button(f"📌 {example}", key=f"ex_{example}", use_container_width=True):
             st.session_state.pending_query = example
             st.rerun()
-    
+
     st.markdown("---")
-    
+
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
+
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -171,7 +206,9 @@ if prompt := st.chat_input("Ask about your sensor data... (e.g., 'plot acc OK ti
     with st.chat_message("assistant"):
         with st.spinner("🤔 Analyzing your request..."):
             start_time = time.time()
-            response = agent.run(prompt)
+            normalized = normalize_user_prompt(prompt)
+            response = agent.run(normalized)
+
             elapsed = time.time() - start_time
             
             st.markdown(response)
@@ -184,14 +221,15 @@ if prompt := st.chat_input("Ask about your sensor data... (e.g., 'plot acc OK ti
 with st.expander("ℹ️ How to Use This Agent"):
     st.markdown("""
     ### Plotting Commands
-    Use the format: `<sensor> <OK/KO> <time/frequency> [condition]`
-    
-    **Available Sensors:** acc, gyro, mag, mic, press, temp, hum
-    
-    **Examples:**
-    - `"plot acc OK time"`
-    - `"show mic KO frequency"`
-    - `"plot gyro OK time vel-fissa"`
+    Use this format:
+
+    `<sensor|sensor_type> <OK/KO> <time|frequency> [condition] [rpm|stwin]`
+
+    **Examples**
+    - `acc OK time`
+    - `mic KO frequency`
+    - `gyro KO time vel-fissa`
+    - `iis3dwb_acc OK time no-load-cycles STWIN_00012`
     
     ### Feature Analysis
     Simply ask:

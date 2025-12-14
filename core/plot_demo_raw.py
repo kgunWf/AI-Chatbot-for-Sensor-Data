@@ -1,7 +1,7 @@
 # plot_demo_raw.py
 import os
 from data_loader import load_raw_bags, filter_bags,group_by_sensor_name
-from plotting import plot_time_series,plot_frequency_spectrum,time_plot,freq_plot
+from plotting import plotting
 from stdatalog_loader import iter_hsd_items
 import os
 from pathlib import Path
@@ -12,13 +12,16 @@ from stdatalog_loader import iter_hsd_items
 from feature_extraction import extract_features_from_bag, extract_features_from_bags, prepare_combined_feature_dataframe
 from feature_analysis import analyze_global_features
 import pandas as pd
-
+import matplotlib.pyplot as plt
 def main():
-    root = os.getenv("STAT_AI_DATA", "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm")
-    bags = load_raw_bags(root="/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm/",verbose=False)#list of dictionaries
-    print("Total bags loaded:", len(bags))
-    time_plot(bags, sensor_type="temp")
-    freq_plot(bags, sensor_type="temp")
+    base_root = "/Users/kgun/Downloads/Sensor_STWIN"
+    belt_status="KO_LOW_8mm"
+    condition="vel-fissa"
+    sensor_type="acc"
+    sensor_name = "iis3dwb_acc"
+    fig1 = plotting(base_root=base_root,belt_status=belt_status, condition=condition, plot_type="time", sensor_type=sensor_type, sensor=sensor_name)
+    fig2 = plotting(base_root=base_root,belt_status=belt_status, condition=condition, plot_type="frequency", sensor_type=sensor_type, sensor=sensor_name)
+    plt.show()
 
 
     # Example: KO acc sensors → plot all axes

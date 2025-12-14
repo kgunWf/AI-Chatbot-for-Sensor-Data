@@ -26,7 +26,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Iterable
-from utils import get_odr_map, norm, get_sensor_type, normalize_sensor_columns
+from core.utils import get_odr_map, norm, get_sensor_type, normalize_sensor_columns
 import pandas as pd
 
 # --- Optional: make local SDK repo importable if it's inside the project tree ---

@@ -9,13 +9,13 @@ import sys
 core_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) 
 if core_dir not in sys.path: 
     sys.path.insert(0, core_dir)
-from core.plotting import plot_time_series, plot_frequency_spectrum
+from core.plotting import plotting
 from core.feature_analysis import analyze_global_features
 
 logger = logging.getLogger(__name__)
 
 
-def build_tools(cleaned_df):
+def build_tools(cleaned_df, path_to_data: str = "") -> list[Tool]:
     """
     Build LangChain tools that close over (capture) cleaned_df.
     This avoids globals and lets the chatbot pass the DF into tool calls implicitly.
@@ -24,52 +24,116 @@ def build_tools(cleaned_df):
     # -----------------------
     # Plot tool
     # -----------------------
-    def plot_wrapper(query: str) -> str:
-        logger.info(f"🎨 PLOT TOOL CALLED with query: '{query}'")
-        start_time = datetime.now()
+    from datetime import datetime
+    import streamlit as st
+    import logging
 
-        try:
-            parts = query.lower().split()
-            sensor = parts[0]
-            belt_status = parts[1].upper()
-            domain = parts[2]
-            condition = parts[3] if len(parts) > 3 else "vel-fissa"
-            extra = parts[4] if len(parts) > 4 else None
+    logger = logging.getLogger(__name__)
 
-            # Pass DF through to plotting functions (you must update these functions to accept df)
-            if domain == "time":
-                fig = plot_time_series(
-                    df=cleaned_df,
+
+    def make_plot_wrapper(base_root: str):
+
+        def plot_wrapper(query: str) -> str:
+            logger.info(f"🎨 PLOT TOOL CALLED with query: '{query}'")
+            start_time = datetime.now()
+
+            try:
+                # -----------------------
+                # 1) Parse query
+                # -----------------------
+                parts = query.strip().split()
+
+                if len(parts) < 3:
+                    return (
+                        "❌ Invalid plot command. Format:\n"
+                        "<sensor|sensor_type> <OK/KO> <time|frequency> "
+                        "[condition] [rpm|stwin]"
+                    )
+
+                sensor_or_type = parts[0].lower()
+                belt_status = parts[1].upper()
+                plot_type = parts[2].lower()
+
+                condition = parts[3] if len(parts) > 3 else "vel-fissa"
+                extra = parts[4] if len(parts) > 4 else None
+
+                # -----------------------
+                # 2) Decide sensor vs type
+                # -----------------------
+                sensor = None
+                sensor_type = None
+
+                known_types = {"acc", "gyro", "mag", "mic", "temp", "hum", "prs"}
+                if sensor_or_type in known_types:
+                    sensor_type = sensor_or_type
+                else:
+                    sensor = sensor_or_type
+
+                # -----------------------
+                # 3) Map extra → rpm / stwin
+                # -----------------------
+                rpm = None
+                stwin = None
+
+                if condition == "vel-fissa":
+                    rpm = extra
+                elif condition == "no-load-cycles":
+                    stwin = extra
+
+                # -----------------------
+                # 4) Call RAW plotting logic
+                # -----------------------
+                figures = plotting(
+                    base_root=base_root,
+                    plot_type=plot_type,
+                    sensor_type=sensor_type,
                     sensor=sensor,
-                    condition=condition,
                     belt_status=belt_status,
-                    stwin=extra,
-                )
-            else:
-                fig = plot_frequency_spectrum(
-                    df=cleaned_df,
-                    sensor=sensor,
                     condition=condition,
-                    belt_status=belt_status,
-                    stwin=extra,
+                    rpm=rpm,
+                    stwin=stwin,
                 )
 
-            st.pyplot(fig)
+                if not figures:
+                    return "⚠️ No plots were generated for the given parameters."
 
-            elapsed = (datetime.now() - start_time).total_seconds()
-            return f"✅ Plotted {sensor} ({belt_status}) in {condition} [{domain}]. (took {elapsed:.2f}s)"
+                # -----------------------
+                # 5) Render figures in Streamlit
+                # -----------------------
+                for fig in figures:
+                    st.pyplot(fig)
 
-        except Exception as e:
-            logger.exception("Plotting error")
-            return f"❌ Plotting error: {e}"
+                elapsed = (datetime.now() - start_time).total_seconds()
+
+                # -----------------------
+                # 6) Return short tool response (agent-safe)
+                # -----------------------
+                return (
+                    f"Plotted {plot_type} data for "
+                    f"{sensor_type or sensor} "
+                    f"({belt_status}, {condition}). "
+                    f"({len(figures)} figure(s), {elapsed:.2f}s)"
+                )
+
+            except Exception as e:
+                logger.exception("Plotting error")
+                return f"❌ Plotting error: {e}"
+
+        return plot_wrapper
+
 
     plot_tool = Tool(
-        name="PlotSensor",
-        func=plot_wrapper,
-        description=(
-            "Plot sensor signals. Format: "
-            "'<sensor> <OK/KO> <time/frequency> [condition] [stwin/pmi]'. "
-            "Examples: 'mic OK time', 'acc KO frequency vel-fissa'"
+    name="PlotSensor",
+    func=make_plot_wrapper(base_root=path_to_data),
+    description=(
+        "Plot RAW sensor signals.\n\n"
+        "Format:\n"
+        "<sensor|sensor_type> <OK/KO> <time|frequency> "
+        "[condition] [rpm|stwin]\n\n"
+        "Examples:\n"
+        "- mic OK time\n"
+        "- acc KO frequency vel-fissa PMS_100rpm\n"
+        "- iis3dwb_acc OK time no-load-cycles STWIN_00012"
         ),
     )
 
@@ -81,15 +145,15 @@ def build_tools(cleaned_df):
         start_time = datetime.now()
 
         try:
-            # Pass DF into analysis function (you must update it to accept df)
             out = analyze_global_features(df=cleaned_df)
 
             top = out["top_features"][:10]
-            st.write("### Top 10 Features by Discriminative Power:")
-            st.table(top)
 
             elapsed = (datetime.now() - start_time).total_seconds()
-            return f"✅ Displayed top 10 discriminative features. (took {elapsed:.2f}s)"
+
+            logger.info(f"✅ Feature analysis completed in {elapsed:.2f}s")
+            return "\n".join(top)
+            
 
         except Exception as e:
             logger.exception("Feature analysis error")

@@ -5,6 +5,8 @@ import pandas as pd
 from scipy.fft import rfft, rfftfreq
 import matplotlib.pyplot as plt
 
+from core.stdatalog_loader import iter_hsd_items
+
 
 def load_raw_bags(root: str, limit: int | None = None, verbose: bool = False) -> list[dict]:
     bags = []#bunu dd yap
@@ -50,15 +52,18 @@ def filter_bags(
         out.append(b)
     return out
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.fft import rfft, rfftfreq
+
+
 def plot_frequency_spectrum(bag: dict, axis: str | None = None):
     """
     Unified, robust FFT plot for ANY supported sensor bag.
 
-    - acc/gyro/mag → FFT of x/y/z (axis="x"/"y"/"z"; axis=None => all)
-    - mic          → FFT of flattened waveform
-    - temp/hum/prs → skipped (not meaningful)
-
-    Uses ODR as the sampling rate.
+    Returns:
+        matplotlib.figure.Figure | None
     """
 
     sensor_type = bag.get("sensor_type")
@@ -66,57 +71,54 @@ def plot_frequency_spectrum(bag: dict, axis: str | None = None):
     df: pd.DataFrame = bag.get("data")
     odr = bag.get("odr", None)
 
-    # You NEED sampling frequency for FFT
+    # FFT requires valid sampling rate
     if not odr or odr <= 0:
         print(f"⚠️ Skipping {sensor_name}: no valid ODR (needed for FFT).")
-        return
+        return None
 
     # -------------------------
     # VECTOR SENSORS (acc/gyro/mag)
     # -------------------------
     if sensor_type in {"acc", "gyro", "mag"}:
         axes = ["x", "y", "z"]
+
         if not all(a in df.columns for a in axes):
             print(f"⚠️ Skipping {sensor_name}: missing x/y/z columns.")
-            return
+            return None
 
         vec = df[axes].dropna()
         if vec.empty:
             print(f"⚠️ Skipping {sensor_name}: no x/y/z samples.")
-            return
+            return None
 
         n = len(vec)
-
-        # Time spacing = 1/odr
         freqs = rfftfreq(n, d=1.0 / odr)
 
-        plt.figure()
+        fig, ax = plt.subplots()
 
-        if axis in axes:  # Single axis FFT
+        if axis in axes:  # single axis FFT
             sig = vec[axis].to_numpy()
             fft_vals = np.abs(rfft(sig - sig.mean()))
-            plt.plot(freqs, fft_vals, label=f"{sensor_type}_{axis}")
-
-        else:  # All axes FFT
-            for ax in axes:
-                sig = vec[ax].to_numpy()
+            ax.plot(freqs, fft_vals, label=f"{sensor_type}_{axis}")
+        else:             # all axes FFT
+            for ax_name in axes:
+                sig = vec[ax_name].to_numpy()
                 fft_vals = np.abs(rfft(sig - sig.mean()))
-                plt.plot(freqs, fft_vals, label=f"{sensor_type}_{ax}")
+                ax.plot(freqs, fft_vals, label=f"{sensor_type}_{ax_name}")
 
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Magnitude")
-        plt.title(f"Frequency Spectrum – {sensor_name} [{sensor_type}]")
-        plt.xlim(0, odr/2)   # show up to Nyquist
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-        return
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("Magnitude")
+        ax.set_title(f"Frequency Spectrum – {sensor_name} [{sensor_type}]")
+        ax.set_xlim(0, odr / 2)
+        ax.legend()
+        fig.tight_layout()
+
+        return fig
 
     # -------------------------
     # MIC SENSORS
     # -------------------------
     if sensor_type == "mic":
-        # find mic-like columns
         mic_cols = [
             c for c in df.columns
             if "mic" in c.lower() or "audio" in c.lower() or "waveform" in c.lower()
@@ -125,44 +127,47 @@ def plot_frequency_spectrum(bag: dict, axis: str | None = None):
 
         if not mic_cols:
             print(f"⚠️ Skipping {sensor_name}: no mic-like columns.")
-            return
+            return None
 
         mic_col = mic_cols[0]
         series = df[mic_col].dropna()
         if series.empty:
             print(f"⚠️ Skipping {sensor_name}: mic data empty.")
-            return
+            return None
 
-        # Flatten if necessary
-        first = series.iloc[0]
-        if isinstance(first, (list, tuple, np.ndarray)):
-            sig = np.concatenate([np.asarray(x).ravel() for x in series])
-        else:
-            sig = pd.to_numeric(series, errors="coerce").dropna().to_numpy()
+        try:
+            first = series.iloc[0]
+            if isinstance(first, (list, tuple, np.ndarray)):
+                sig = np.concatenate([np.asarray(x).ravel() for x in series])
+            else:
+                sig = pd.to_numeric(series, errors="coerce").dropna().to_numpy()
+        except Exception as e:
+            print(f"⚠️ Skipping {sensor_name}: error flattening mic data ({e})")
+            return None
 
         if sig.size == 0:
             print(f"⚠️ Skipping {sensor_name}: mic signal invalid.")
-            return
+            return None
 
         n = sig.size
         freqs = rfftfreq(n, d=1.0 / odr)
         fft_vals = np.abs(rfft(sig - np.mean(sig)))
 
-        plt.figure()
-        plt.plot(freqs, fft_vals)
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Magnitude")
-        plt.title(f"Frequency Spectrum – {sensor_name} [mic]")
-        plt.xlim(0, odr/2)
-        plt.tight_layout()
-        plt.show()
-        return
+        fig, ax = plt.subplots()
+        ax.plot(freqs, fft_vals)
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("Magnitude")
+        ax.set_title(f"Frequency Spectrum – {sensor_name} [mic]")
+        ax.set_xlim(0, odr / 2)
+        fig.tight_layout()
+
+        return fig
 
     # -------------------------
     # TEMP/HUM/PRS (skip)
     # -------------------------
-    print(f"⚠️ Skipping {sensor_name}: FFT not applicable to sensor_type {sensor_type}.")
-
+    print(f"⚠️ Skipping {sensor_name}: FFT not applicable to sensor_type '{sensor_type}'.")
+    return None
 
 
 def _build_time_axis(n: int, odr: float | None):
@@ -207,17 +212,19 @@ def is_bag_plottable(bag: dict) -> bool:
     # Anything else: not supported (for now)
     return False
 
-def plot_time_series(bag: dict, axis: str | None = None) -> None:
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+
+def plot_time_series(bag: dict, axis: str | None = None):
     """
     Unified, robust time-series plot for ANY supported sensor bag.
 
-    - acc/gyro/mag → x/y/z axes (axis="x"/"y"/"z"; axis=None => all 3)
-    - temp/hum/prs → scalar column ("temp", "hum", "prs")
-    - mic          → flattened waveform from mic/audio/waveform column
-
-    If the bag is missing expected columns, the function prints a warning
-    and returns without raising, so callers can safely loop.
+    Returns:
+        matplotlib.figure.Figure | None
     """
+
     sensor_type = bag.get("sensor_type")
     sensor_name = bag.get("sensor")
     df: pd.DataFrame = bag.get("data")
@@ -225,69 +232,68 @@ def plot_time_series(bag: dict, axis: str | None = None) -> None:
 
     if df is None:
         print(f"⚠️ Skipping {sensor_name}: no 'data' DataFrame in bag.")
-        return
+        return None
 
     # -------------------------
     # VECTOR SENSORS: acc/gyro/mag
     # -------------------------
     if sensor_type in {"acc", "gyro", "mag"}:
         axes = ["x", "y", "z"]
+
         if not all(a in df.columns for a in axes):
             print(f"⚠️ Skipping {sensor_name}: missing x,y,z columns; cols={list(df.columns)}")
-            return
+            return None
 
         vec = df[axes].dropna()
         if vec.empty:
             print(f"⚠️ Skipping {sensor_name}: no x/y/z samples after dropna().")
-            return
+            return None
 
         n = len(vec)
         t, t_label = _build_time_axis(n, odr)
 
-        plt.figure()
+        fig, ax = plt.subplots()
 
-        if axis in axes:  # plot a single axis
-            arr = vec[axis].to_numpy()
-            plt.plot(t, arr, label=f"{sensor_type}_{axis}")
-        else:             # plot all three axes
-            for ax in axes:
-                plt.plot(t, vec[ax].to_numpy(), label=f"{sensor_type}_{ax}")
+        if axis in axes:  # single axis
+            ax.plot(t, vec[axis].to_numpy(), label=f"{sensor_type}_{axis}")
+        else:             # all axes
+            for ax_name in axes:
+                ax.plot(t, vec[ax_name].to_numpy(), label=f"{sensor_type}_{ax_name}")
 
-        plt.xlabel(t_label)
-        plt.ylabel(sensor_type)
-        plt.title(f"Time series – {sensor_name} [{sensor_type}]")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-        return
+        ax.set_xlabel(t_label)
+        ax.set_ylabel(sensor_type)
+        ax.set_title(f"Time series – {sensor_name} [{sensor_type}]")
+        ax.legend()
+        fig.tight_layout()
+
+        return fig
 
     # -------------------------
     # SCALAR SENSORS: temp/hum/prs
     # -------------------------
     if sensor_type in {"temp", "hum", "prs"}:
-        col_map = {"temp": "temp", "hum": "hum", "prs": "prs"}
-        col = col_map[sensor_type]
+        col = sensor_type  # same name mapping
 
         if col not in df.columns:
             print(f"⚠️ Skipping {sensor_name}: expected '{col}' not in {list(df.columns)}")
-            return
+            return None
 
         sig = df[col].dropna().to_numpy()
         if sig.size == 0:
             print(f"⚠️ Skipping {sensor_name}: column '{col}' is empty after dropna().")
-            return
+            return None
 
         n = sig.size
         t, t_label = _build_time_axis(n, odr)
 
-        plt.figure()
-        plt.plot(t, sig)
-        plt.xlabel(t_label)
-        plt.ylabel(col)
-        plt.title(f"Time series – {sensor_name} [{sensor_type}]")
-        plt.tight_layout()
-        plt.show()
-        return
+        fig, ax = plt.subplots()
+        ax.plot(t, sig)
+        ax.set_xlabel(t_label)
+        ax.set_ylabel(col)
+        ax.set_title(f"Time series – {sensor_name} [{sensor_type}]")
+        fig.tight_layout()
+
+        return fig
 
     # -------------------------
     # MIC SENSORS
@@ -297,152 +303,243 @@ def plot_time_series(bag: dict, axis: str | None = None) -> None:
             c for c in df.columns
             if "mic" in c.lower() or "audio" in c.lower() or "waveform" in c.lower()
         ]
-        mic_cols = list(dict.fromkeys(mic_cols))  # dedup, preserve order
+        mic_cols = list(dict.fromkeys(mic_cols))
 
         if not mic_cols:
             print(f"⚠️ Skipping {sensor_name}: no mic-like columns; cols={list(df.columns)}")
-            return
+            return None
 
-        # If multiple candidates, pick the one with highest std
+        # Choose most dynamic column if multiple
         if len(mic_cols) > 1:
             try:
                 stats = {c: df[c].std(skipna=True) for c in mic_cols}
                 mic_col = max(stats, key=stats.get)
             except Exception as e:
-                print(f"⚠️ Skipping {sensor_name}: cannot choose mic column by std ({e}); cols={mic_cols}")
-                return
+                print(f"⚠️ Skipping {sensor_name}: cannot choose mic column ({e})")
+                return None
         else:
             mic_col = mic_cols[0]
 
         series = df[mic_col].dropna()
         if series.empty:
-            print(f"⚠️ Skipping {sensor_name}: mic column '{mic_col}' is empty after dropna().")
-            return
+            print(f"⚠️ Skipping {sensor_name}: mic column '{mic_col}' empty.")
+            return None
 
-        first = series.iloc[0]
         try:
+            first = series.iloc[0]
             if isinstance(first, (list, tuple, np.ndarray)):
-                # Each row is a small vector → flatten all of them
                 sig = np.concatenate([np.asarray(x).ravel() for x in series])
             else:
-                # Standard scalar 1D signal
                 sig = pd.to_numeric(series, errors="coerce").dropna().to_numpy()
         except Exception as e:
-            print(f"⚠️ Skipping {sensor_name}: error while flattening mic data ({e}).")
-            return
+            print(f"⚠️ Skipping {sensor_name}: error flattening mic data ({e})")
+            return None
 
         if sig.size == 0:
-            print(f"⚠️ Skipping {sensor_name}: mic signal is empty after conversion.")
-            return
+            print(f"⚠️ Skipping {sensor_name}: mic signal empty.")
+            return None
 
         n = sig.size
         t, t_label = _build_time_axis(n, odr)
 
-        plt.figure()
-        plt.plot(t, sig)
-        plt.xlabel(t_label)
-        plt.ylabel(mic_col)
-        plt.title(f"Time series – {sensor_name} [mic]")
-        plt.tight_layout()
-        plt.show()
-        return
+        fig, ax = plt.subplots()
+        ax.plot(t, sig)
+        ax.set_xlabel(t_label)
+        ax.set_ylabel(mic_col)
+        ax.set_title(f"Time series – {sensor_name} [mic]")
+        fig.tight_layout()
+
+        return fig
 
     # -------------------------
     # UNSUPPORTED SENSOR TYPE
     # -------------------------
     print(f"⚠️ Skipping {sensor_name}: unsupported sensor_type '{sensor_type}'.")
+    return None
 
 #function that plots the bags according to the provided filters
 #we assume that the bags are loaded somewhere else
 def time_plot(
     bags: list[dict],
-    sensor_type: str | None = None,
-    sensor: str | None = None,
-    belt_status: str | None = None,
-    condition: str | None = None,
-    rpm: str |None=None,
-) -> list[dict]:
-   
+    axis: str | None = None,
+) -> None:
+    """
+    Plot time-series for one representative bag per sensor.
 
-    # filter the bags based on given condition
-    filtered_bags = filter_bags(bags, sensor_type, belt_status,rpm,condition)
+    Assumes:
+    - bags are already filtered
+    - bags contain raw data
+    """
 
-    #print a warning if no bags match the filter condition
-    if not filtered_bags:
-        print("⚠️ No bags matched the given filters; nothing to plot.")
+    if not bags:
+        print("⚠️ time_plot: empty bag list.")
         return
 
-    #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
-    grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
+    grouped = group_by_sensor_name(bags)
 
     representatives = {
-         name: cycles[0] #key = sensor name and value = the first recording for that sensor
-         for name, cycles in grouped_acc.items()
-     }
+        sensor_name: cycles[0]
+        for sensor_name, cycles in grouped.items()
+    }
 
     for bag in representatives.values():
-         plot_time_series(bag)
+        plot_time_series(bag, axis=axis)
 
 def freq_plot(
     bags: list[dict],
-    sensor_type: str | None = None,
-    sensor: str | None = None,
-    belt_status: str | None = None,
-    condition: str | None = None,
-    rpm: str |None=None,
-) -> list[dict]:
-   
-    # Example: KO acc sensors → plot all axes
-    filtered_bags = filter_bags(
-    bags,
-    sensor_type=sensor_type,
-    sensor=sensor,
-    belt_status=belt_status,
-    condition=condition,
-    rpm=rpm)
+    axis: str | None = None,
+) -> None:
+    """
+    Plot frequency spectrum for one representative bag per sensor.
 
-    #if sensor_type=="temp" or sensor_type=="hum" or "pressure"
-    if sensor_type in {"temp", "hum", "prs", "pressure"}:
-        print(f"⚠️ Frequency plots are not meaningful for sensor_type='{sensor_type}'. Skipping.")
+    Assumes:
+    - bags are already filtered
+    - bags contain raw data
+    """
+
+    if not bags:
+        print("⚠️ freq_plot: empty bag list.")
         return
 
-    #print a warning if no bags match the filter condition
-    if not filtered_bags:
-        print("⚠️ No bags matched the given filters; nothing to plot.")
-        return
-
-
-    #group filtered sensor by their names (such as iis3dwb_acc', 'iis2dh_acc', 'ism330dhcx_acc' )
-    grouped_acc = group_by_sensor_name(filtered_bags)#this is a dictionary
+    grouped = group_by_sensor_name(bags)
 
     representatives = {
-         name: cycles[0] #key = sensor name and value = the first recording for that sensor
-         for name, cycles in grouped_acc.items()
-     }
+        sensor_name: cycles[0]
+        for sensor_name, cycles in grouped.items()
+    }
 
     for bag in representatives.values():
-        plot_frequency_spectrum(bag)
+        sensor_type = bag.get("sensor_type")
 
-# def plotting(
-#      bags: list[dict],
-#      sensor_type: str | None = None,
-#      sensor: str | None = None,
-#      belt_status: str | None = None,
-#      condition: str | None = None,
-#      rpm: str |None=None,
-#      plot_type: str|None=None
+        if sensor_type in {"temp", "hum", "prs"}:
+            print(
+                f"⚠️ Skipping frequency plot for sensor "
+                f"{bag.get('sensor')} (sensor_type={sensor_type})"
+            )
+            continue
 
-#  ) -> list[dict]:
+        plot_frequency_spectrum(bag, axis=axis)
 
-#     #merge the ouput dir
-#     #path should be like: "/Users/zeynepoztunc/Downloads/Sensor_STWIN/vel-fissa/KO_LOW_4mm/PMS_50rpm/"
-#     path = ""
+def resolve_experiment_path(
+    base_root: str,
+    condition: str,
+    belt_status: str,
+    rpm: str | None,
+    stwin: str | None,
+) -> tuple[str, str | None, str | None]:
+    """
+    Resolve valid rpm/stwin and build the experiment path.
+    Returns: (path, rpm, stwin)
+    """
 
-#     bags = load_raw_bags(root=path,verbose=False)#list of dictionaries
+    if belt_status not in {"OK","KO_HIGH_2mm", "KO_LOW_2mm", "KO_HIGH_4mm", "KO_LOW_4mm"}:
+        print("Invalid belt_status. Expected 'OK', 'KO_HIGH_2mm', 'KO_LOW_2mm', 'KO_HIGH_4mm', or 'KO_LOW_4mm'. Assigning default 'OK'.")
+        belt_status = "OK"
 
-#     if plot_type == "time":
-#         time_plot(bags, sensor_type)
-#     elif plot_type == "frequency":
-#         freq_plot(bags, sensor_type)
-#     else:
-#         print(f"⚠️ Unknown plot_type='{plot_type}'. Use 'time' or 'frequency'.")
+    if condition == "vel-fissa":
+        rpm = rpm or "PMS_50rpm"
+        stwin = None
+        subdir = rpm
+
+    elif condition == "no-load-cycles":
+        stwin = stwin or "STWIN_00001"
+        rpm = None
+        subdir = stwin
+
+    else:
+        raise ValueError(
+            f"Invalid condition='{condition}'. "
+            "Expected 'vel-fissa' or 'no-load-cycles'."
+        )
+
+    path = f"{base_root}/{condition}/{belt_status}/{subdir}/"
+    return path, rpm, stwin, belt_status
+
+def plotting(
+    base_root: str,
+    plot_type: str,
+    sensor_type: str | None = None,
+    sensor: str | None = None,
+    belt_status: str = "OK",
+    condition: str = "vel-fissa",
+    rpm: str | None = None,
+    stwin: str | None = None,
+    axis: str | None = None,
+    limit: int | None = None,
+) -> None:
+    """
+    Unified wrapper for time/frequency raw plots.
+
+    plot_type: "time" | "frequency"
+    """
+
+    # -----------------------
+    # 1) Resolve path + params
+    # -----------------------
+    try:
+        path, rpm, stwin, belt_status = resolve_experiment_path(
+            base_root=base_root,
+            condition=condition,
+            belt_status=belt_status,
+            rpm=rpm,
+            stwin=stwin,
+        )
+    except ValueError as e:
+        print(f"⚠️ {e}")
+        return
+
+    # -----------------------
+    # 2) Load raw bags
+    # -----------------------
+    bags = load_raw_bags(root=path, limit=limit, verbose=False)
+
+    if not bags:
+        print(f"⚠️ No raw data found at path:\n{path}")
+        return
+    print("✅ Loaded", len(bags), "bags from", path)
+    # -----------------------
+    # 3) Filter
+    # -----------------------
+    filtered = filter_bags(
+        bags=bags,
+        sensor_type=sensor_type,
+        sensor=sensor,
+        belt_status=belt_status,
+        condition=condition,
+        rpm=rpm,
+    )
+
+    if not filtered:
+        print("⚠️ No bags matched the given filters.")
+        return
+
+    grouped = group_by_sensor_name(filtered)
+    representatives = {k: v[0] for k, v in grouped.items()}
+
+    # -----------------------
+    # 4) Dispatch plot
+    # -----------------------
+    figs = []
+    for bag in representatives.values():
+        if plot_type == "time":
+            figs.append(plot_time_series(bag, axis=axis))
+
+        elif plot_type == "frequency":
+            if bag["sensor_type"] in {"temp", "hum", "prs"}:
+                print(
+                    f"⚠️ Skipping frequency plot for sensor_type="
+                    f"{bag['sensor_type']}"
+                )
+                continue
+            figs.append(plot_frequency_spectrum(bag, axis=axis))
+            
+
+        else:
+            print(
+                f"⚠️ Unknown plot_type='{plot_type}'. "
+                "Use 'time' or 'frequency'."
+            )
+            return 
+        
+    print(f"✅ Generated {len(figs)} plots for plot_type='{plot_type}'.")
+    return figs
