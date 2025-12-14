@@ -6,11 +6,11 @@ import streamlit as st
 import os
 import sys
 # Get the parent directory 
-core_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) 
+core_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')) 
 if core_dir not in sys.path: 
     sys.path.insert(0, core_dir)
-from core.plotting import plotting
-from core.feature_analysis import analyze_global_features
+from plotting import plotting
+from feature_analysis import analyze_global_features
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +98,13 @@ def build_tools(cleaned_df, path_to_data: str = "") -> list[Tool]:
                     return "⚠️ No plots were generated for the given parameters."
 
                 # -----------------------
-                # 5) Render figures in Streamlit
+                # 5) Update Streamlit state with figures
                 # -----------------------
-                for fig in figures:
-                    st.pyplot(fig)
+                if "plots" not in st.session_state:
+                    st.session_state.plots = []
 
+                st.session_state.plots.extend(figures)
+                
                 elapsed = (datetime.now() - start_time).total_seconds()
 
                 # -----------------------
@@ -165,37 +167,56 @@ def build_tools(cleaned_df, path_to_data: str = "") -> list[Tool]:
         description="Analyzes and displays the top 10 most discriminative features between OK and KO samples.",
     )
 
-    def inspect_dataset_wrapper(query: str = "") -> str:
-        """Provides information about the sensor dataset."""
+    def inspect_dataset_wrapper(_: str = "") -> str:
+        """
+        TERMINAL TOOL.
+        Returns a concise, human-readable summary of the dataset.
+        No analysis, no recommendations, no printing.
+        """
         try:
-            info = []
-            info.append(f"Dataset Shape: {cleaned_df.shape[0]} rows × {cleaned_df.shape[1]} columns\n")
-            
-            # Column information
-            info.append("Available Columns:")
-            for col in cleaned_df.columns:
-                info.append(f"  - {col}")
-            
-            # Label distribution
-            if 'belt_status' in cleaned_df.columns:
-                label_counts = cleaned_df['belt_status'].value_counts()
-                info.append(f"\nBelt Status Distribution:")
-                for status, count in label_counts.items():
-                    info.append(f"  - {status}: {count} samples")
-            
-            # Sensor types
-            if 'sensor' in cleaned_df.columns:
-                sensors = cleaned_df['sensor'].unique()
-                info.append(f"\nAvailable Sensors: {', '.join(sensors)}")
-            
+            lines: list[str] = []
+
+            # -----------------------------
+            # Basic shape
+            # -----------------------------
+            n_rows, n_cols = cleaned_df.shape
+            lines.append(f"**Dataset size:** {n_rows} samples × {n_cols} columns")
+
+            # -----------------------------
+            # Belt status distribution
+            # -----------------------------
+            if "belt_status" in cleaned_df.columns:
+                counts = cleaned_df["belt_status"].value_counts()
+                ok = int(counts.get("OK", 0))
+                ko = int(counts.get("KO", 0))
+                lines.append(f"**Belt status distribution:** OK = {ok}, KO = {ko}")
+
+            # -----------------------------
             # Conditions
-            if 'condition' in cleaned_df.columns:
-                conditions = cleaned_df['condition'].unique()
-                info.append(f"\nConditions: {', '.join(conditions)}")
-            
-            return "\n".join(info)
+            # -----------------------------
+            if "condition" in cleaned_df.columns:
+                conditions = sorted(cleaned_df["condition"].dropna().unique())
+                lines.append(f"**Conditions:** {', '.join(conditions)}")
+
+            # -----------------------------
+            # Sensors
+            # -----------------------------
+            if "sensor" in cleaned_df.columns:
+                sensors = sorted(cleaned_df["sensor"].dropna().unique())
+                lines.append(f"**Available sensors:** {', '.join(sensors)}")
+
+            # -----------------------------
+            # Columns (shortened, not overwhelming)
+            # -----------------------------
+            cols_preview = ", ".join(cleaned_df.columns[:12])
+            suffix = " ..." if len(cleaned_df.columns) > 12 else ""
+            lines.append(f"**Columns (preview):** {cols_preview}{suffix}")
+
+            return "\n".join(lines)
+
         except Exception as e:
-            return f"Error inspecting dataset: {e}"
+            return f"❌ InspectDataset failed: {e}"
+
 
     inspect_tool = Tool(
         name="InspectDataset",

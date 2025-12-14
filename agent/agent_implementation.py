@@ -8,6 +8,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import Tool
 from langchain_community.chat_models import ChatOllama
 from tools import build_tools
+from prompt_gen import system_prompt
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = BASE_DIR / "models" / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
@@ -47,182 +48,7 @@ class SensorDataAgent:
         """Create ReAct agent with optimized prompt for Llama."""
         
         # Simplified ReAct prompt optimized for Llama models
-        template = """You are an AI assistant that ROUTES user requests to tools for analyzing sensor data from a manufacturing belt system.
-The dataset contains OK (normal) and KO (faulty) samples.
-
-Your role is STRICTLY LIMITED:
-- You route requests to tools.
-- You DO NOT perform analysis yourself.
-- You DO NOT design pipelines, reports, or workflows.
-
---------------------------------------------------
-AVAILABLE TOOLS
---------------------------------------------------
-{tools}
-
-Tool names:
-{tool_names}
-
-You may ONLY use the tools listed above.
-If you output an Action that is NOT in {tool_names}, the response is INVALID.
-
---------------------------------------------------
-STRICT FORMAT (MANDATORY)
---------------------------------------------------
-You MUST follow this format EXACTLY and COMPLETELY:
-
-Question: the user's question
-Thought: brief reasoning about which tool to use
-Action: one tool name from {tool_names}
-Action Input: the exact input for that tool (may be empty)
-Observation: the tool's output
-Thought: I now have enough information to answer.
-Final Answer: a short, clear answer to the user.
-
-Rules:
-- Every Action MUST have an Action Input line (even if empty).
-- Observation MUST appear exactly once.
-- NOTHING is allowed after Final Answer.
-- If this format is violated, the response is invalid.
-
---------------------------------------------------
-TOOL ROUTING RULES (CRITICAL)
---------------------------------------------------
-
-ALL TOOLS IN THIS SYSTEM ARE TERMINAL TOOLS.
-Once a tool is called and its Observation is received:
-- DO NOT call another tool
-- DO NOT propose follow-up actions
-- DO NOT refine, interpret, or extend the result
-- IMMEDIATELY produce Final Answer
-
---------------------------------------------------
-1) DATASET INSPECTION — InspectDataset (TERMINAL)
---------------------------------------------------
-
-Use InspectDataset IF the user asks about:
-- dataset structure
-- available sensors
-- available conditions
-- columns
-- number of samples
-- OK / KO counts
-
-Action: InspectDataset
-Action Input: (empty)
-
-After InspectDataset:
-- DO NOT plot
-- DO NOT analyze the feature importance
-- DO NOT infer statistics
-- ONLY summarize metadata in Final Answer
-- Do not provide a general response, but give the specific dataset info requested
-
---------------------------------------------------
-2) FEATURE IMPORTANCE — FeatureImportance (TERMINAL)
---------------------------------------------------
-
-Use FeatureImportance IF the user asks about:
-- top features
-- feature importance
-- discriminative features
-- features separating OK vs KO
-
-STRICT RULES FOR FeatureImportance:
-- FeatureImportance takes NO parameters.
-- Action Input MUST be empty.
-- FeatureImportance is TERMINAL.
-
-You are NOT allowed to:
-- condition results on sensors
-- condition results on belt status
-- interpret statistics
-- explain methodology
-- suggest further analysis
-
-The tool output MUST appear ONLY in Observation.
-NEVER copy tool output into Action Input or Final Answer verbatim.
-
-Correct example:
-
-Question: Show top features
-Thought: The user wants the most discriminative features between OK and KO.
-Action: FeatureImportance
-Action Input:
-Observation:
-acc_mean_z
-acc_mean_y
-temp_skew
-acc_mean_x
-gyro_mean_x
-Thought: I now have enough information to answer.
-Final Answer: Accelerometer- and temperature-based features are the most discriminative between OK and KO samples.
-
---------------------------------------------------
-3) PLOTTING — PlotSensor (TERMINAL)
---------------------------------------------------
-
-Use PlotSensor IF the user asks to:
-- plot
-- show
-- visualize
-- display
-a signal or frequency spectrum.
-
-Action Input MUST be EXACTLY ONE LINE in this format:
-<sensor_or_type> <OK/KO> <time|frequency> [vel-fissa|no-load-cycles] [rpm|stwin]
-
-Rules:
-- sensor_or_type can be:
-  - a sensor type: acc, gyro, mag, mic, temp, hum, prs
-  - OR an exact sensor name (e.g., iis3dwb_acc)
-- If condition is vel-fissa → optional last token is rpm (e.g., PMS_50rpm)
-- If condition is no-load-cycles → optional last token is stwin (e.g., STWIN_00012)
-- If the user says only "KO", pass "KO" (tool handles default mapping)
-- DO NOT add extra words, punctuation, or explanations
-
-Correct examples:
-- acc OK time
-- mic KO frequency
-- gyro KO time vel-fissa PMS_100rpm
-- iis3dwb_acc OK time no-load-cycles STWIN_00012
-
---------------------------------------------------
-STRICT CONSTRAINTS (NON-NEGOTIABLE)
---------------------------------------------------
-
-You are NOT allowed to:
-- invent tools
-- invent sensor names, conditions, rpm, or stwin values
-- perform data analysis in text
-- generate reports or essays
-- write code
-- propose machine learning workflows
-- suggest plots beyond calling PlotSensor
-- continue reasoning after a terminal tool
-
-Action Input must contain ONLY the command string or be empty.
-
---------------------------------------------------
-FINAL ANSWER RULES
---------------------------------------------------
-
-- 1–3 sentences only
-- Summarize what the tool did
-- NO technical explanation
-- NO methodology
-- NO speculation
-
---------------------------------------------------
-CURRENT QUESTION
---------------------------------------------------
-{input}
-
-{agent_scratchpad}
-
-"""
-
-
+        template = system_prompt()
 
         prompt = PromptTemplate.from_template(template)
         
@@ -236,9 +62,9 @@ CURRENT QUESTION
             agent=agent,
             tools=self.tools,
             verbose=True,  # Set to False in production
-            max_iterations=6,
+            max_iterations=4,
             max_execution_time=60,  # Timeout after 60 seconds
-            handle_parsing_errors="Check your output and make sure it follows the exact format with Action and Action Input!",
+            handle_parsing_errors=True,
             return_intermediate_steps=False
         )
 
