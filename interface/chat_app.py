@@ -1,6 +1,11 @@
 # streamlit_app.py
 
 import streamlit as st
+import os
+import sys
+agent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'agent')) 
+if agent_dir not in sys.path: 
+    sys.path.insert(0, agent_dir)
 from agent_implementation import SensorDataAgent, CSV_PATH, DATA_PATH
 import time
 
@@ -80,6 +85,15 @@ agent, error = load_agent()
 if error:
     st.error(f"❌ Failed to load agent: {error}")
     st.stop()
+
+# -----------------------------
+# Session state initialization
+# -----------------------------
+if "plots" not in st.session_state:
+    st.session_state["plots"] = []
+
+if "last_query" not in st.session_state:
+    st.session_state["last_query"] = None
 
 # -------------------------------------------------
 # Sidebar: Dataset overview + quick actions
@@ -171,10 +185,33 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# -------------------------------------------------
+# Render persisted plots (CRITICAL POSITION)
+# -------------------------------------------------
+if st.session_state.plots:
+    st.markdown("### 📈 Generated Plots")
+    for fig in st.session_state.plots:
+        st.pyplot(fig, clear_figure=False)
+
+# -----------------------------
+# Plot persistence (CRITICAL)
+# -----------------------------
+if "plots" not in st.session_state:
+    st.session_state.plots = []
+
+if "last_query" not in st.session_state:
+    st.session_state.last_query = None
+
 # Handle pending query from sidebar
 if st.session_state.pending_query:
     query = st.session_state.pending_query
     st.session_state.pending_query = None
+
+    # 🔥 Clear old plots if this is a new query
+    if st.session_state.last_query != query:
+        st.session_state.plots = []
+        st.session_state.last_query = query
+
     
     # Add user message
     st.session_state.messages.append({"role": "user", "content": query})
@@ -197,6 +234,13 @@ if st.session_state.pending_query:
 
 # Chat input
 if prompt := st.chat_input("Ask about your sensor data... (e.g., 'plot acc OK time')"):
+
+    normalized = normalize_user_prompt(prompt)
+
+    if st.session_state.last_query != normalized:
+        st.session_state.plots = []
+        st.session_state.last_query = normalized
+
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
