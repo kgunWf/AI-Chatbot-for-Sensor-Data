@@ -5,7 +5,7 @@ import pandas as pd
 from scipy.fft import rfft, rfftfreq
 import matplotlib.pyplot as plt
 
-from core.stdatalog_loader import iter_hsd_items
+from stdatalog_loader import iter_hsd_items
 
 
 def load_raw_bags(root: str, limit: int | None = None, verbose: bool = False) -> list[dict]:
@@ -433,8 +433,12 @@ def resolve_experiment_path(
     """
 
     if belt_status not in {"OK","KO_HIGH_2mm", "KO_LOW_2mm", "KO_HIGH_4mm", "KO_LOW_4mm"}:
-        print("Invalid belt_status. Expected 'OK', 'KO_HIGH_2mm', 'KO_LOW_2mm', 'KO_HIGH_4mm', or 'KO_LOW_4mm'. Assigning default 'OK'.")
-        belt_status = "OK"
+        if not belt_status.startswith("KO"):
+            print("Invalid belt_status. Expected 'OK', 'KO_HIGH_2mm', 'KO_LOW_2mm', 'KO_HIGH_4mm', or 'KO_LOW_4mm'. Assigning default 'OK'.")
+            belt_status = "OK"
+        else:
+            print("Assigning default 'KO' status 'KO_LOW_4mm'.")
+            belt_status = "KO_LOW_4mm"
 
     if condition == "vel-fissa":
         rpm = rpm or "PMS_50rpm"
