@@ -10,9 +10,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-from core.feature_extraction import prepare_combined_feature_dataframe
-#from catboost import CatBoostClassifier
-#from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
+from xgboost import XGBClassifier
 
 def analyze_global_features(df: pd.DataFrame, sensor_subset: list[str] = None, model_type: str = "rf", top_k=None, do_plots=False):
     """
