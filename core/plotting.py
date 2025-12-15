@@ -446,7 +446,7 @@ def resolve_experiment_path(
         subdir = rpm
 
     elif condition == "no-load-cycles":
-        stwin = stwin or "STWIN_00001"
+        stwin = stwin or "STWIN_00008"
         rpm = None
         subdir = stwin
 
