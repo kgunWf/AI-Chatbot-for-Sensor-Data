@@ -49,3 +49,7 @@ Utilities/
 __MACOSX/
 *~  # backup files
 
+stdatalog-pysdk/
+
+data/
+*.dat
