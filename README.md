@@ -1,4 +1,4 @@
-# Statistical AI Agent for Dataset Analysis
+# Statistical AI Tool Router for Dataset Analysis
 
 A Streamlit-based AI agent for anomaly detection in belt regulation using STWIN sensor data. The agent supports natural language queries for time/frequency plots, feature importance analysis, and dataset inspection.
 
